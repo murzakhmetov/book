@@ -753,53 +753,12 @@ p { margin: 0 0 1em; }
 .auth-tab.is-active { color: var(--rose-deep); border-bottom-color: var(--rose-deep); font-weight: 600; }
 .auth-tab--admin { color: var(--rose); }
 
-.quick-auth-box {
-  background: linear-gradient(135deg, #FFF6F3 0%, #FAECE7 100%);
-  border: 1px dashed var(--rose-border); border-radius: 12px;
-  padding: 14px; margin-bottom: 18px;
-}
-.quick-auth-title {
-  font-size: 12px; font-weight: 700; color: var(--rose-deep); text-transform: uppercase;
-  letter-spacing: .05em; margin-bottom: 8px; display: block;
-}
-.quick-auth-buttons {
-  display: grid; gap: 8px;
-}
-.quick-btn {
-  display: flex; align-items: center; justify-content: space-between; width: 100%;
-  padding: 8px 12px; border-radius: 8px; border: 1px solid var(--rose-border);
-  background: #FFF; font-size: 13.5px; font-weight: 500; color: var(--ink);
-  cursor: pointer; transition: all .15s; text-align: left;
-}
-.quick-btn:hover {
-  background: var(--rose-wash); border-color: var(--rose); color: var(--rose-deep);
-  transform: translateY(-1px);
-}
-.quick-btn span.badge {
-  font-size: 11px; padding: 2px 7px; border-radius: 12px;
-  background: var(--rose-wash); color: var(--rose-deep); font-weight: 600;
-}
-
-.auth-subtext {
-  text-align: center; margin-top: 14px; font-size: 14px; color: var(--ink-soft);
-}
 .auth-admin-badge {
   display: flex; align-items: center; gap: 12px; padding: 12px 14px;
   background: var(--rose-wash); border: 1px solid var(--rose-border);
   border-radius: var(--radius); margin-bottom: 18px; font-size: 14px;
 }
 .auth-admin-badge .icon { width: 24px; height: 24px; color: var(--rose-deep); flex-shrink: 0; }
-
-.admin-creds-hint {
-  background: linear-gradient(135deg, #FAF0EE 0%, #F5DFDC 100%);
-  border: 1px solid var(--rose-border); border-radius: var(--radius);
-  padding: 14px 16px; font-size: 13.5px; margin-bottom: 20px; line-height: 1.5;
-}
-.admin-creds-hint strong { color: var(--rose-hover); }
-.admin-creds-hint code {
-  background: #FFF; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--rose-border);
-  font-family: monospace; font-size: 13px; color: var(--rose-hover);
-}
 
 /* ------------------------------------------------------------ Customer Cabinet */
 .cab-page, .cabinet-wrap { padding: 32px 0 64px; }
