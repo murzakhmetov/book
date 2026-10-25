@@ -1,0 +1,9 @@
+Fonts bundled with book_lovers.kz
+
+Lora — Copyright The Lora Project Authors (https://github.com/cyrealtype/Lora-Cyrillic)
+Inter — Copyright The Inter Project Authors (https://github.com/rsms/inter)
+
+Both are licensed under the SIL Open Font License, Version 1.1
+(https://openfontlicense.org). They are subset to Latin, Cyrillic (incl. Kazakh)
+and the tenge sign to keep pages fast. The same license covers the copies in
+bookstore/assets/fonts used to draw demo covers.

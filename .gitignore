@@ -1,0 +1,7 @@
+.playwright-mcp/
+.gemini/
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
