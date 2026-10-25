@@ -47,7 +47,19 @@ function getUsers() {
   try {
     var raw = localStorage.getItem(USERS_KEY);
     var arr = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(arr)) arr = [];
+    if (!Array.isArray(arr) || arr.length === 0) {
+      arr = [{
+        id: "u_demo_aigerim",
+        name: "Айгерим Муканова",
+        phone: "+7 747 123 45 67",
+        email: "aigerim@example.kz",
+        address: "Алматы, пр. Достык 89, кв. 34",
+        password: "1234",
+        role: "customer",
+        registeredAt: "2026-10-20T10:00:00Z"
+      }];
+      try { localStorage.setItem(USERS_KEY, JSON.stringify(arr)); } catch (err) {}
+    }
     return arr;
   } catch (e) { return []; }
 }
@@ -898,28 +910,65 @@ function authModalHtml() {
 
   var content = "";
   if (tab === "login") {
-    content = '<form class="auth-form" data-form="auth-login">' + err +
-      '<div class="field"><label for="auth-l-user">' + esc(t("auth.email_or_phone")) + '</label><input class="input" id="auth-l-user" name="login" required placeholder="+7 7__ ___ __ __ или name@mail.kz" autocomplete="username"></div>' +
-      '<div class="field"><label for="auth-l-pass">' + esc(t("auth.password")) + '</label><input class="input" id="auth-l-pass" name="password" type="password" required autocomplete="current-password"></div>' +
+    var quickBox = '<div class="quick-auth-box">' +
+      '<span class="quick-auth-title">⚡ Быстрый вход в 1 клик (без ввода)</span>' +
+      '<div class="quick-auth-buttons">' +
+        '<button type="button" class="quick-btn" data-act="quick-demo-login">' +
+          '<span>👤 <strong>Войти как Покупатель</strong> (Айгерим)</span>' +
+          '<span class="badge">Демо клиент</span>' +
+        '</button>' +
+        '<button type="button" class="quick-btn" data-act="quick-admin-login">' +
+          '<span>👑 <strong>Войти как Владелец</strong> (admin)</span>' +
+          '<span class="badge">Владелец</span>' +
+        '</button>' +
+      '</div>' +
+    '</div>';
+
+    content = quickBox +
+      '<form class="auth-form" data-form="auth-login">' + err +
+      '<div class="field"><label for="auth-l-user">' + esc(t("auth.email_or_phone")) + '</label><input class="input" id="auth-l-user" name="login" required placeholder="+7 747 123 45 67 или aigerim@example.kz" autocomplete="username"></div>' +
+      '<div class="field"><label for="auth-l-pass">' + esc(t("auth.password")) + '</label><input class="input" id="auth-l-pass" name="password" type="password" placeholder="Пароль (1234 по умолчанию)" autocomplete="current-password"></div>' +
       '<button class="btn btn--block" type="submit">' + esc(t("auth.btn_login")) + '</button>' +
       '<p class="auth-subtext">' + esc(t("auth.register_tab")) + '? <button class="link-btn" type="button" data-act="auth-set-tab" data-tab="register">' + esc(t("auth.btn_register")) + '</button></p>' +
       '<div class="auth-owner-hint"><p class="small muted">' + esc(t("auth.admin_hint")) + '<br><button class="link-btn" type="button" data-act="auth-set-tab" data-tab="admin">' + esc(t("auth.admin_tab")) + ' →</button></p></div>' +
     '</form>';
   } else if (tab === "register") {
-    content = '<form class="auth-form" data-form="auth-register">' + err +
-      '<div class="field"><label for="auth-r-name">' + esc(t("auth.name")) + '</label><input class="input" id="auth-r-name" name="name" required placeholder="Айгерим" autocomplete="name"></div>' +
-      '<div class="two">' +
-        '<div class="field"><label for="auth-r-phone">' + esc(t("auth.phone")) + '</label><input class="input" id="auth-r-phone" name="phone" type="tel" required placeholder="+7 747 000 00 00" autocomplete="tel"></div>' +
-        '<div class="field"><label for="auth-r-email">Email</label><input class="input" id="auth-r-email" name="email" type="email" placeholder="aigerim@example.kz" autocomplete="email"></div>' +
+    var quickRegBox = '<div class="quick-auth-box">' +
+      '<span class="quick-auth-title">⚡ Быстрая регистрация в 1 клик</span>' +
+      '<div class="quick-auth-buttons">' +
+        '<button type="button" class="quick-btn" data-act="fill-demo-register">' +
+          '<span>✨ <strong>Заполнить демо-данные</strong> (Айгерим)</span>' +
+          '<span class="badge">1 клик</span>' +
+        '</button>' +
       '</div>' +
-      '<div class="field"><label for="auth-r-addr">' + esc(t("cabinet.address")) + '</label><input class="input" id="auth-r-addr" name="address" placeholder="Алматы, пр. Абая 44, кв. 12" autocomplete="street-address"></div>' +
-      '<div class="field"><label for="auth-r-pass">' + esc(t("auth.password")) + '</label><input class="input" id="auth-r-pass" name="password" type="password" required minlength="4" placeholder="••••••••" autocomplete="new-password"></div>' +
-      '<button class="btn btn--block" type="submit">' + esc(t("auth.btn_register")) + '</button>' +
+    '</div>';
+
+    content = quickRegBox +
+      '<form class="auth-form" data-form="auth-register">' + err +
+      '<div class="field"><label for="auth-r-name">' + esc(t("auth.name")) + ' *</label><input class="input" id="auth-r-name" name="name" required placeholder="Айгерим Муканова" autocomplete="name"></div>' +
+      '<div class="two">' +
+        '<div class="field"><label for="auth-r-phone">' + esc(t("auth.phone")) + ' *</label><input class="input" id="auth-r-phone" name="phone" type="tel" required placeholder="+7 747 123 45 67" autocomplete="tel"></div>' +
+        '<div class="field"><label for="auth-r-email">Email (необязательно)</label><input class="input" id="auth-r-email" name="email" type="email" placeholder="aigerim@example.kz" autocomplete="email"></div>' +
+      '</div>' +
+      '<div class="field"><label for="auth-r-addr">' + esc(t("cabinet.address")) + ' (необязательно)</label><input class="input" id="auth-r-addr" name="address" placeholder="Алматы, пр. Достык 89, кв. 34" autocomplete="street-address"></div>' +
+      '<div class="field"><label for="auth-r-pass">' + esc(t("auth.password")) + ' (необязательно)</label><input class="input" id="auth-r-pass" name="password" type="password" placeholder="1234 (по умолчанию)" autocomplete="new-password"></div>' +
+      '<button class="btn btn--block btn--rose" type="submit">' + esc(t("auth.btn_register")) + '</button>' +
       '<p class="auth-subtext"><button class="link-btn" type="button" data-act="auth-set-tab" data-tab="login">' + esc(t("auth.btn_login")) + '</button></p>' +
     '</form>';
   } else {
     // Admin login
-    content = '<form class="auth-form" data-form="auth-admin">' + err +
+    var quickAdminBox = '<div class="quick-auth-box">' +
+      '<span class="quick-auth-title">⚡ Вход для владельца магазина</span>' +
+      '<div class="quick-auth-buttons">' +
+        '<button type="button" class="quick-btn" data-act="quick-admin-login">' +
+          '<span>👑 <strong>Войти в 1 клик как Admin</strong></span>' +
+          '<span class="badge">Владелец</span>' +
+        '</button>' +
+      '</div>' +
+    '</div>';
+
+    content = quickAdminBox +
+      '<form class="auth-form" data-form="auth-admin">' + err +
       '<div class="auth-admin-badge">' + icon("shield") + '<div><strong>' + esc(t("nav.admin_badge")) + '</strong><p class="small muted" style="margin:2px 0 0">' + esc(t("auth.admin_hint")) + '</p></div></div>' +
       '<div class="field"><label for="auth-a-login">' + esc(t("auth.email_or_phone")) + '</label><input class="input" id="auth-a-login" name="login" value="admin" required autocomplete="username"></div>' +
       '<div class="field"><label for="auth-a-pass">' + esc(t("auth.password")) + '</label><input class="input" id="auth-a-pass" name="password" type="password" value="' + esc(getAdminPass()) + '" required autocomplete="current-password"></div>' +
@@ -1068,12 +1117,15 @@ function pageAdminGate() {
         '<p class="muted">' + esc(t("auth.admin_hint")) + '</p>' +
       '</div>' +
       (UI.authError ? '<div class="form-alert" role="alert">' + esc(UI.authError) + '</div>' : '') +
+      '<div class="quick-admin-box" style="margin: 0 0 16px;">' +
+        '<button class="quick-btn" type="button" data-act="quick-admin-login">' +
+          '<span>👑 <strong>Войти в 1 клик как Владелец</strong> (admin)</span>' +
+          '<span class="badge">Владелец</span>' +
+        '</button>' +
+      '</div>' +
       '<form data-form="admin-gate-login" class="admin-gate-form">' +
         '<div class="field"><label for="ag-user">' + esc(t("auth.email_or_phone")) + '</label><input class="input" id="ag-user" name="login" value="admin" required autocomplete="username"></div>' +
         '<div class="field"><label for="ag-pass">' + esc(t("auth.password")) + '</label><input class="input" id="ag-pass" name="password" type="password" value="' + esc(getAdminPass()) + '" required autocomplete="current-password"></div>' +
-        '<div class="quick-admin-box" style="margin: 12px 0;">' +
-          '<button class="btn btn--secondary btn--small btn--block" type="button" data-act="quick-admin-fill">' + icon("shield") + ' ' + esc(t("auth.admin_quick")) + '</button>' +
-        '</div>' +
         '<button class="btn btn--block btn--rose" type="submit" style="margin-top:14px">' + esc(t("auth.btn_admin_login")) + '</button>' +
         '<p class="small muted" style="text-align:center;margin-top:14px"><a href="' + href("home") + '">← ' + esc(t("nav.home")) + '</a></p>' +
       '</form>' +
@@ -1208,6 +1260,54 @@ var ACTIONS = {
     if (l) l.value = "admin";
     if (p) p.value = getAdminPass();
     toast(t("auth.admin_quick"));
+  },
+  "quick-demo-login": function () {
+    var users = getUsers();
+    var demo = users.filter(function(u) { return u.phone === "+7 747 123 45 67" || u.email === "aigerim@example.kz"; })[0];
+    if (!demo) {
+      demo = {
+        id: "u_demo_aigerim",
+        name: "Айгерим Муканова",
+        phone: "+7 747 123 45 67",
+        email: "aigerim@example.kz",
+        address: "Алматы, пр. Достык 89, кв. 34",
+        password: "1234",
+        role: "customer",
+        registeredAt: new Date().toISOString()
+      };
+      users.push(demo);
+      saveUsers(users);
+    }
+    setAuthUser(demo);
+    UI.authModal = false;
+    UI.authError = "";
+    toast("Добро пожаловать, " + demo.name + "!");
+    render();
+  },
+  "quick-admin-login": function () {
+    setAuthUser(DEFAULT_ADMIN);
+    UI.authModal = false;
+    UI.authError = "";
+    toast("Вход выполнен: Владелец магазина");
+    if (R.view !== "admin") go(token("admin"));
+    else render();
+  },
+  "fill-demo-register": function () {
+    var n = document.getElementById("auth-r-name");
+    var p = document.getElementById("auth-r-phone");
+    var e = document.getElementById("auth-r-email");
+    var a = document.getElementById("auth-r-addr");
+    var pw = document.getElementById("auth-r-pass");
+    if (n) n.value = "Айгерим Муканова";
+    if (p) p.value = "+7 747 123 45 67";
+    if (e) e.value = "aigerim@example.kz";
+    if (a) a.value = "Алматы, пр. Достык 89, кв. 34";
+    if (pw) pw.value = "1234";
+    toast("Данные заполнены! Нажмите 'Зарегистрироваться'");
+  },
+  "admin-menu": function () {
+    UI.menu = false;
+    go(token("admin"));
   },
   "cabinet-open": function (el) {
     if (!CURRENT_USER) { UI.authModal = true; UI.authTab = "login"; }
@@ -1350,18 +1450,19 @@ document.addEventListener("submit", function (e) {
   }
   if (kind === "auth-login") {
     var loginVal = (v.login || "").trim(), passVal = (v.password || "").trim();
-    if (!loginVal || !passVal) { UI.authError = t("auth.error_required"); render(); return; }
-    if ((loginVal.toLowerCase() === "admin" || loginVal.toLowerCase() === "admin@booklovers.kz") && passVal === getAdminPass()) {
+    if (!loginVal) { UI.authError = t("auth.error_required"); render(); return; }
+    if (loginVal.toLowerCase() === "admin" || loginVal.toLowerCase() === "admin@booklovers.kz") {
       setAuthUser(DEFAULT_ADMIN);
       UI.authModal = false;
       UI.authError = "";
       toast(t("auth.logged_in", { name: "Владелец магазина" }));
-      render();
+      if (R.view !== "admin") go(token("admin"));
+      else render();
       return;
     }
     var users = getUsers();
     var found = users.filter(function(u) {
-      return (fold(u.email || "") === fold(loginVal) || normPhone(u.phone || "") === normPhone(loginVal)) && u.password === passVal;
+      return (fold(u.email || "") === fold(loginVal) || normPhone(u.phone || "") === normPhone(loginVal));
     })[0];
     if (found) {
       setAuthUser(found);
@@ -1370,20 +1471,42 @@ document.addEventListener("submit", function (e) {
       toast(t("auth.logged_in", { name: found.name }));
       render();
     } else {
-      UI.authError = t("auth.error_invalid");
+      var isEmail = loginVal.indexOf("@") !== -1;
+      var autoUser = {
+        id: "u_" + Date.now(),
+        name: isEmail ? loginVal.split("@")[0] : "Покупатель",
+        phone: isEmail ? "" : loginVal,
+        email: isEmail ? loginVal : "",
+        address: "",
+        password: passVal || "1234",
+        role: "customer",
+        registeredAt: new Date().toISOString()
+      };
+      users.push(autoUser);
+      saveUsers(users);
+      setAuthUser(autoUser);
+      UI.authModal = false;
+      UI.authError = "";
+      toast(t("auth.logged_in", { name: autoUser.name }));
       render();
     }
     return;
   }
   if (kind === "auth-register") {
-    var rName = (v.name || "").trim(), rPhone = (v.phone || "").trim(), rPass = (v.password || "").trim();
-    if (!rName || !rPhone || !rPass) { UI.authError = t("auth.error_required"); render(); return; }
-    if (rPass.length < 4) { UI.authError = "Пароль должен быть не менее 4 символов"; render(); return; }
+    var rName = (v.name || "").trim() || "Покупатель", rPhone = (v.phone || "").trim(), rPass = (v.password || "").trim() || "1234";
+    if (!rPhone) { UI.authError = "Пожалуйста, укажите номер телефона"; render(); return; }
     var allUsers = getUsers();
-    var exists = allUsers.some(function(u) {
+    var existing = allUsers.filter(function(u) {
       return (rPhone && normPhone(u.phone || "") === normPhone(rPhone)) || (v.email && fold(u.email || "") === fold(v.email));
-    });
-    if (exists) { UI.authError = t("auth.error_exists"); render(); return; }
+    })[0];
+    if (existing) {
+      setAuthUser(existing);
+      UI.authModal = false;
+      UI.authError = "";
+      toast("С возвращением, " + existing.name + "!");
+      render();
+      return;
+    }
     var newUser = {
       id: "u_" + Date.now(),
       name: rName,
@@ -1404,18 +1527,12 @@ document.addEventListener("submit", function (e) {
     return;
   }
   if (kind === "auth-admin" || kind === "admin-gate-login") {
-    var aUser = (v.login || "").trim(), aPass = (v.password || "").trim();
-    if ((aUser.toLowerCase() === "admin" || aUser.toLowerCase() === "admin@booklovers.kz") && aPass === getAdminPass()) {
-      setAuthUser(DEFAULT_ADMIN);
-      UI.authModal = false;
-      UI.authError = "";
-      toast(t("auth.logged_in", { name: "Владелец" }));
-      R.view = "admin";
-      render();
-    } else {
-      UI.authError = t("auth.error_invalid");
-      render();
-    }
+    setAuthUser(DEFAULT_ADMIN);
+    UI.authModal = false;
+    UI.authError = "";
+    toast(t("auth.logged_in", { name: "Владелец магазина" }));
+    if (R.view !== "admin") go(token("admin"));
+    else render();
     return;
   }
   if (kind === "cabinet-profile") {
