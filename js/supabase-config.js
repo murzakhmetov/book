@@ -1,12 +1,9 @@
 /**
  * book_lovers.kz - Supabase Database Configuration
  *
- * Подключение базы данных Supabase для сохранения пользователей, заказов и избранного:
- * 1. Создайте проект на https://supabase.com (бесплатно).
- * 2. Перейдите в Project Settings -> API.
- * 3. Скопируйте Project URL и anon / publishable key и укажите их ниже:
- *    (Также их можно ввести прямо в админ-панели сайта во вкладке "Настройки").
- * 4. Запустите скрипт из файла supabase/schema.sql в SQL Editor вашего проекта Supabase.
+ * База данных Supabase подключена для сохранения пользователей, заказов и избранного:
+ * - URL проекта: https://grazmukqoglnedyzlxue.supabase.co
+ * - Anon Key: sb_publishable_qSIoQs6qkLhT3z6tDXCPIw_PUPrZOlN
  */
 (function () {
   "use strict";
@@ -19,10 +16,10 @@
   } catch (e) {}
 
   window.SUPABASE_CONFIG = {
-    // URL проекта Supabase (например: "https://xyzcompany.supabase.co")
-    url: (saved && saved.url) ? saved.url.trim() : "",
+    // URL проекта Supabase
+    url: (saved && saved.url) ? saved.url.trim() : "https://grazmukqoglnedyzlxue.supabase.co",
 
     // Публичный anon / publishable ключ Supabase
-    anonKey: (saved && saved.anonKey) ? saved.anonKey.trim() : ""
+    anonKey: (saved && saved.anonKey) ? saved.anonKey.trim() : "sb_publishable_qSIoQs6qkLhT3z6tDXCPIw_PUPrZOlN"
   };
 })();

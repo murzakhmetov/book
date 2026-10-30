@@ -296,12 +296,11 @@
 
       if (this.isReady()) {
         try {
-          var res = await client.from("orders").insert(record).select().single();
+          var res = await client.from("orders").insert(record);
           if (res.error) {
             console.error("Supabase insert order error:", res.error);
-            // Even if Supabase throws an RLS or table error, we return the record so order flow continues
           } else {
-            return res.data;
+            return record;
           }
         } catch (err) {
           console.error("Failed to insert order to Supabase:", err);
