@@ -44,17 +44,22 @@ var DEFAULT_ADMIN = {
 };
 
 function getUsers() {
-  return [];
+  try {
+    var raw = localStorage.getItem(USERS_KEY);
+    var arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
 }
-function saveUsers(arr) {}
+function saveUsers(arr) {
+  try { localStorage.setItem(USERS_KEY, JSON.stringify(arr)); } catch (e) {}
+}
 
 var CURRENT_USER = null;
 try {
   var uRaw = localStorage.getItem(AUTH_USER_KEY);
   if (uRaw) {
     var parsed = JSON.parse(uRaw);
-    if (parsed && parsed.role === "admin") CURRENT_USER = parsed;
-    else localStorage.removeItem(AUTH_USER_KEY);
+    if (parsed) CURRENT_USER = parsed;
   }
 } catch (e) { CURRENT_USER = null; }
 
@@ -62,12 +67,12 @@ function isStoreAdmin() {
   return !!(CURRENT_USER && CURRENT_USER.role === "admin");
 }
 function isCustomer() {
-  return false;
+  return !!(CURRENT_USER && CURRENT_USER.role === "customer");
 }
 function setAuthUser(user) {
   CURRENT_USER = user;
   try {
-    if (user && user.role === "admin") localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    if (user) localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
     else localStorage.removeItem(AUTH_USER_KEY);
   } catch (e) {}
   if (isStoreAdmin()) {
@@ -91,18 +96,89 @@ function isFav(id) {
 }
 function toggleFav(id) {
   var idx = FAVORITES.indexOf(id);
+  var adding = false;
   if (idx !== -1) {
     FAVORITES.splice(idx, 1);
     toast(t("fav.removed"));
   } else {
     FAVORITES.push(id);
+    adding = true;
     toast(t("fav.added"));
   }
   try { localStorage.setItem(FAVS_KEY, JSON.stringify(FAVORITES)); } catch (e) {}
+  if (CURRENT_USER && CURRENT_USER.id && window.BL_DB && window.BL_DB.isReady()) {
+    if (adding) window.BL_DB.addFavorite(CURRENT_USER.id, id);
+    else window.BL_DB.removeFavorite(CURRENT_USER.id, id);
+  }
   render();
 }
 
-/* ===================================================================== store orders */
+/* ===================================================================== store orders & supabase sync */
+var SB_ORDERS_FETCHED = false;
+function fetchSupabaseOrdersIfNeeded() {
+  if (SB_ORDERS_FETCHED || !window.BL_DB || !window.BL_DB.isReady()) return;
+  SB_ORDERS_FETCHED = true;
+  window.BL_DB.getAllOrders().then(function(dbOrders) {
+    if (Array.isArray(dbOrders) && dbOrders.length) {
+      var localOrders = getOrders();
+      var idMap = {};
+      localOrders.forEach(function(o) { idMap[o.id] = true; });
+      var changed = false;
+      dbOrders.forEach(function(dbo) {
+        if (!idMap[dbo.id]) {
+          localOrders.push(dbo);
+          changed = true;
+        }
+      });
+      if (changed) {
+        try { localStorage.setItem(ORDERS_KEY, JSON.stringify(localOrders)); } catch (e) {}
+        render();
+      }
+    }
+  });
+}
+
+function fetchUserOrdersIfNeeded(userId) {
+  if (!window.BL_DB || !window.BL_DB.isReady() || !userId) return;
+  window.BL_DB.getUserOrders(userId).then(function(dbOrders) {
+    if (Array.isArray(dbOrders) && dbOrders.length) {
+      var localOrders = getOrders();
+      var idMap = {};
+      localOrders.forEach(function(o) { idMap[o.id] = true; });
+      var changed = false;
+      dbOrders.forEach(function(dbo) {
+        if (!idMap[dbo.id]) {
+          localOrders.unshift(dbo);
+          changed = true;
+        }
+      });
+      if (changed) {
+        try { localStorage.setItem(ORDERS_KEY, JSON.stringify(localOrders)); } catch (e) {}
+        render();
+      }
+    }
+  });
+}
+
+function syncUserData(userId) {
+  if (!window.BL_DB || !window.BL_DB.isReady() || !userId) return;
+  window.BL_DB.syncFavorites(userId, FAVORITES).then(function (merged) {
+    if (Array.isArray(merged) && merged.length) {
+      FAVORITES = merged;
+      try { localStorage.setItem(FAVS_KEY, JSON.stringify(FAVORITES)); } catch (e) {}
+      render();
+    }
+  });
+  fetchUserOrdersIfNeeded(userId);
+  window.BL_DB.getCart(userId).then(function (remoteCart) {
+    if (remoteCart && Object.keys(remoteCart).length > 0 && Object.keys(CART).length === 0) {
+      CART = remoteCart;
+      saveCart();
+      render();
+    }
+  });
+}
+
 function getOrders() {
   try {
     var oRaw = localStorage.getItem(ORDERS_KEY);
@@ -252,7 +328,12 @@ function deliveryFee(method, itemsTotal) {
 /* ===================================================================== cart (this browser only) */
 var CART = {};
 try { CART = JSON.parse(store("bl-cart") || "{}") || {}; } catch (e) { CART = {}; }
-function saveCart() { store("bl-cart", JSON.stringify(CART)); }
+function saveCart() {
+  store("bl-cart", JSON.stringify(CART));
+  if (CURRENT_USER && CURRENT_USER.id && window.BL_DB && window.BL_DB.isReady()) {
+    window.BL_DB.saveCart(CURRENT_USER.id, CART);
+  }
+}
 function cartLines() {
   var lines = [], out = [], changed = false;
   Object.keys(CART).forEach(function (id) {
@@ -407,7 +488,9 @@ function header() {
     '<button class="icon-btn" type="button" data-act="cabinet-fav" aria-label="' + esc(t("nav.favorites")) + '" title="' + esc(t("nav.favorites")) + '">' + icon("heart") + (FAVORITES.length ? '<span class="fav-badge">' + FAVORITES.length + '</span>' : '') + '</button>' +
     (isStoreAdmin() ?
       '<a class="user-btn user-btn--admin" href="' + href("admin") + '" title="' + esc(t("site.manage")) + '"><span class="user-avatar">👑</span><span class="desktop-only">' + esc(CURRENT_USER.name || "Владелец") + '</span></a>' :
-      '<button class="icon-btn" type="button" data-act="auth-open" title="' + esc(t("auth.admin_tab")) + '" aria-label="' + esc(t("auth.admin_tab")) + '">' + icon("shield") + '</button>') +
+      (CURRENT_USER ?
+        '<button class="user-btn" type="button" data-act="cabinet-open" title="' + esc(t("nav.account")) + '"><span class="user-avatar">👤</span><span class="desktop-only">' + esc(CURRENT_USER.name || t("nav.account")) + '</span></button>' :
+        '<button class="user-btn" type="button" data-act="auth-open" title="' + esc(t("nav.login")) + '"><span class="user-avatar">👤</span><span class="desktop-only">' + esc(t("nav.login")) + '</span></button>')) +
     '<button class="icon-btn mobile-only" type="button" data-act="search-toggle" aria-label="' + esc(t("nav.search_label")) + '">' + icon("search") + "</button>" +
     '<details class="lang-pop mobile-only"><summary class="icon-btn" aria-label="' + esc(t("nav.language")) + '"><span class="lang-pop__current">' + LANG_SHORT[R.lang] + '</span></summary><div class="lang-pop__menu">' +
     LANGS.map(function (l) { return '<a href="' + href(R.view, R.arg, l) + '" lang="' + l + '"' + (l === R.lang ? ' aria-current="true"' : "") + ">" + LANG_NAMES[l] + "</a>"; }).join("") + "</div></details>" +
@@ -421,7 +504,10 @@ function header() {
     (isStoreAdmin() ?
       '<a class="btn btn--small btn--rose btn--block" style="margin-bottom:8px;text-align:center;" href="' + href("admin") + '">' + icon("shield") + ' ' + esc(t("site.manage")) + '</a>' +
       '<button class="btn btn--ghost btn--small btn--block" type="button" data-act="logout">' + icon("logout") + ' ' + esc(t("nav.logout")) + '</button>' :
-      '<button class="btn btn--ghost btn--small btn--block" type="button" data-act="auth-open">' + icon("shield") + ' ' + esc(t("auth.admin_tab")) + '</button>') +
+      (CURRENT_USER ?
+        '<button class="btn btn--small btn--rose btn--block" style="margin-bottom:8px;" type="button" data-act="cabinet-open">' + icon("user") + ' ' + esc(CURRENT_USER.name || t("nav.account")) + '</button>' +
+        '<button class="btn btn--ghost btn--small btn--block" type="button" data-act="logout">' + icon("logout") + ' ' + esc(t("nav.logout")) + '</button>' :
+        '<button class="btn btn--ghost btn--small btn--block" type="button" data-act="auth-open">' + icon("user") + ' ' + esc(t("nav.login")) + '</button>')) +
     '</div>' +
     '<div class="mobile-nav__langs langs">' + LANGS.map(function (l) { return '<a href="' + href(R.view, R.arg, l) + '"' + (l === R.lang ? ' aria-current="true"' : "") + ">" + LANG_NAMES[l] + "</a>"; }).join("") + "</div>" +
     (waLink() ? '<a class="btn btn--ghost" style="margin-top:20px" href="' + esc(waLink(t("consult.wa_text"))) + '" target="_blank" rel="noopener">' + icon("whatsapp") + " " + esc(t("social.write_whatsapp")) + "</a>" : "") + "</div>";
@@ -879,25 +965,175 @@ function pageCheckout() {
   return h;
 }
 
-/* ===================================================================== auth & favorites views */
+/* ===================================================================== auth & cabinet views */
 function authModalHtml() {
   if (!UI.authModal) return "";
+  var tab = UI.authTab || "login";
   var err = UI.authError ? '<div class="form-alert" role="alert">' + esc(UI.authError) + '</div>' : "";
+  var isSb = window.BL_DB && window.BL_DB.isReady();
+
+  var sbBadge = isSb ?
+    '<div class="pill pill--green" style="font-size:12px;margin-bottom:12px;display:inline-flex;align-items:center;gap:6px;">' + icon("database") + ' Supabase подключен</div>' :
+    '<div class="pill pill--grey" style="font-size:12px;margin-bottom:12px;display:inline-flex;align-items:center;gap:6px;" title="Ключи Supabase можно указать в настройках админки">' + icon("database") + ' Локальный режим (без Supabase)</div>';
+
+  var nav = '<div class="auth-tabs" role="tablist">' +
+    '<button type="button" class="auth-tab' + (tab === "login" ? " is-active" : "") + '" data-act="auth-set-tab" data-tab="login">' + esc(t("auth.login_tab")) + '</button>' +
+    '<button type="button" class="auth-tab' + (tab === "register" ? " is-active" : "") + '" data-act="auth-set-tab" data-tab="register">' + esc(t("auth.register_tab")) + '</button>' +
+    '<button type="button" class="auth-tab auth-tab--admin' + (tab === "admin" ? " is-active" : "") + '" data-act="auth-set-tab" data-tab="admin">' + icon("shield") + ' ' + esc(t("auth.admin_tab")) + '</button>' +
+  '</div>';
+
+  var content = "";
+  if (tab === "login") {
+    content = '<form class="auth-form" data-form="auth-login">' + err +
+      '<div class="field"><label for="auth-l-user">' + esc(t("auth.email_or_phone")) + '</label><input class="input" id="auth-l-user" name="login" required placeholder="name@example.com или +7 7__ ___ __ __" autocomplete="username"></div>' +
+      '<div class="field"><label for="auth-l-pass">' + esc(t("auth.password")) + '</label><input class="input" id="auth-l-pass" name="password" type="password" required autocomplete="current-password"></div>' +
+      '<button class="btn btn--block btn--rose" type="submit" ' + (UI.authBusy ? 'disabled' : '') + '>' + (UI.authBusy ? 'Входим…' : esc(t("auth.btn_login"))) + '</button>' +
+      '<p class="auth-subtext" style="text-align:center;margin-top:14px;font-size:13.5px;">' + esc(t("auth.register_tab")) + '? <button class="link-btn" type="button" data-act="auth-set-tab" data-tab="register">' + esc(t("auth.btn_register")) + '</button></p>' +
+      '<div class="auth-owner-hint" style="text-align:center;margin-top:12px;border-top:1px solid var(--line-light);padding-top:10px;"><button class="link-btn small muted" type="button" data-act="auth-set-tab" data-tab="admin">' + icon("shield") + ' ' + esc(t("auth.admin_tab")) + '</button></div>' +
+    '</form>';
+  } else if (tab === "register") {
+    content = '<form class="auth-form" data-form="auth-register">' + err +
+      '<div class="field"><label for="auth-r-name">' + esc(t("auth.name")) + '</label><input class="input" id="auth-r-name" name="name" required placeholder="Айгерим" autocomplete="name"></div>' +
+      '<div class="two">' +
+        '<div class="field"><label for="auth-r-phone">' + esc(t("auth.phone")) + '</label><input class="input" id="auth-r-phone" name="phone" type="tel" required placeholder="+7 747 000 00 00" autocomplete="tel"></div>' +
+        '<div class="field"><label for="auth-r-email">Email</label><input class="input" id="auth-r-email" name="email" type="email" placeholder="aigerim@example.kz" autocomplete="email"></div>' +
+      '</div>' +
+      '<div class="field"><label for="auth-r-addr">' + esc(t("cabinet.address")) + '</label><input class="input" id="auth-r-addr" name="address" placeholder="Алматы, пр. Абая 44, кв. 12" autocomplete="street-address"></div>' +
+      '<div class="field"><label for="auth-r-pass">' + esc(t("auth.password")) + '</label><input class="input" id="auth-r-pass" name="password" type="password" required minlength="4" placeholder="••••••••" autocomplete="new-password"></div>' +
+      '<button class="btn btn--block btn--rose" type="submit" ' + (UI.authBusy ? 'disabled' : '') + '>' + (UI.authBusy ? 'Регистрация…' : esc(t("auth.btn_register"))) + '</button>' +
+      '<p class="auth-subtext" style="text-align:center;margin-top:14px;font-size:13.5px;"><button class="link-btn" type="button" data-act="auth-set-tab" data-tab="login">' + esc(t("auth.btn_login")) + '</button></p>' +
+    '</form>';
+  } else {
+    // Admin login
+    content = '<form class="auth-form" data-form="auth-admin">' + err +
+      '<div class="auth-admin-badge">' + icon("shield") + '<div><strong>' + esc(t("auth.admin_tab")) + '</strong><p class="small muted" style="margin:2px 0 0">' + esc(t("auth.admin_hint")) + '</p></div></div>' +
+      '<div class="field"><label for="auth-a-login">' + esc(t("auth.email_or_phone")) + '</label><input class="input" id="auth-a-login" name="login" value="admin" required autocomplete="username"></div>' +
+      '<div class="field"><label for="auth-a-pass">' + esc(t("auth.password")) + '</label><input class="input" id="auth-a-pass" name="password" type="password" value="' + esc(getAdminPass()) + '" required autocomplete="current-password"></div>' +
+      '<button class="btn btn--block btn--rose" type="submit" style="margin-top:16px;">' + esc(t("auth.btn_admin_login")) + '</button>' +
+    '</form>';
+  }
 
   return '<div class="auth-modal-backdrop is-open" data-act="auth-backdrop">' +
-    '<div class="auth-modal" role="dialog" aria-modal="true" style="max-width:440px;">' +
+    '<div class="auth-modal" role="dialog" aria-modal="true" style="max-width:480px;">' +
       '<div class="auth-modal-head">' +
-        '<h2>' + icon("shield") + ' ' + esc(t("auth.admin_tab")) + '</h2>' +
+        '<h2>' + esc(t(tab === "admin" ? "auth.admin_tab" : (tab === "register" ? "auth.register_tab" : "auth.login_tab"))) + '</h2>' +
         '<button class="icon-btn" type="button" data-act="auth-close" aria-label="' + esc(t("nav.close")) + '">' + icon("close") + '</button>' +
       '</div>' +
-      '<div class="auth-modal-body">' +
-        '<p class="small muted" style="margin-bottom:16px;">' + esc(t("auth.admin_hint")) + '</p>' +
-        '<form class="auth-form" data-form="auth-admin">' + err +
-          '<div class="field"><label for="auth-a-login">' + esc(t("auth.email_or_phone")) + '</label><input class="input" id="auth-a-login" name="login" placeholder="admin" required autocomplete="username"></div>' +
-          '<div class="field"><label for="auth-a-pass">' + esc(t("auth.password")) + '</label><input class="input" id="auth-a-pass" name="password" type="password" placeholder="' + esc(t("auth.password")) + '" required autocomplete="current-password"></div>' +
-          '<button class="btn btn--block btn--rose" type="submit" style="margin-top:16px;">' + esc(t("auth.btn_admin_login")) + '</button>' +
-        '</form>' +
+      sbBadge +
+      nav +
+      '<div class="auth-modal-body">' + content + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function customerCabinetHtml(isFullPage) {
+  if (!CURRENT_USER) return "";
+  var tab = UI.cabTab || "orders";
+  var allOrders = getOrders();
+  var myOrders = allOrders.filter(function(o) {
+    if (isStoreAdmin()) return true;
+    if (o.customer && o.customer.id && CURRENT_USER.id && o.customer.id === CURRENT_USER.id) return true;
+    if (o.user_id && CURRENT_USER.id && o.user_id === CURRENT_USER.id) return true;
+    if (o.customer && o.customer.phone && CURRENT_USER.phone && normPhone(o.customer.phone) === normPhone(CURRENT_USER.phone)) return true;
+    if (o.customer && o.customer.email && CURRENT_USER.email && fold(o.customer.email) === fold(CURRENT_USER.email)) return true;
+    return false;
+  });
+
+  if (tab === "orders" && CURRENT_USER.id) {
+    fetchUserOrdersIfNeeded(CURRENT_USER.id);
+  }
+
+  var favBooks = FAVORITES.map(function(id) { return productById(id); }).filter(Boolean);
+
+  var nav = '<div class="cab-tabs" role="tablist">' +
+    '<button type="button" class="cab-tab' + (tab === "orders" ? " is-active" : "") + '" data-act="cab-tab" data-tab="orders">' + icon("bag") + ' ' + esc(t("cabinet.tab_orders")) + ' <span class="pill pill--xs">' + myOrders.length + '</span></button>' +
+    '<button type="button" class="cab-tab' + (tab === "favs" ? " is-active" : "") + '" data-act="cab-tab" data-tab="favs">' + icon("heart") + ' ' + esc(t("cabinet.tab_favs")) + ' <span class="pill pill--xs">' + favBooks.length + '</span></button>' +
+    '<button type="button" class="cab-tab' + (tab === "profile" ? " is-active" : "") + '" data-act="cab-tab" data-tab="profile">' + icon("user") + ' ' + esc(t("cabinet.tab_profile")) + '</button>' +
+  '</div>';
+
+  var body = "";
+  if (tab === "orders") {
+    if (!myOrders.length) {
+      body = '<div class="cab-empty" style="text-align:center;padding:36px 16px;">' + icon("bag") + '<h3>' + esc(t("cabinet.no_orders")) + '</h3><p class="muted">' + esc(t("cart.empty_text")) + '</p><a class="btn btn--small" href="' + href("catalog") + '" data-act="cabinet-close">' + esc(t("hero.cta_catalog")) + '</a></div>';
+    } else {
+      body = '<div class="orders-list">' + myOrders.map(function(o) {
+        var statusClass = { new: "order-status--new", processing: "order-status--confirmed", shipped: "order-status--shipped", completed: "order-status--delivered", cancelled: "order-status--cancelled" }[o.status || "new"] || "order-status--new";
+        var statusName = t("orders.status_" + (o.status || "new"));
+        var dateStr = (o.date || o.created_at) ? fmtDate(o.date || o.created_at) : "—";
+        return '<div class="order-card">' +
+          '<div class="order-card__head">' +
+            '<div><span class="order-card__num">' + esc(o.id) + '</span><span class="order-card__date muted">' + esc(dateStr) + '</span></div>' +
+            '<span class="order-status-badge ' + statusClass + '">' + esc(statusName) + '</span>' +
+          '</div>' +
+          '<div class="order-card__items">' +
+            (o.items || []).map(function(it) {
+              return '<div class="order-card__item"><span>' + esc(it.title) + ' <span class="muted">× ' + it.qty + '</span></span><span class="tnum">' + price(it.total || (it.price * it.qty)) + '</span></div>';
+            }).join("") +
+          '</div>' +
+          '<div class="order-card__foot">' +
+            '<div class="order-card__total"><strong>' + esc(t("cart.total")) + ': ' + price(o.total) + '</strong></div>' +
+            '<div class="order-card__actions">' +
+              '<button class="btn btn--ghost btn--xs" type="button" data-act="repeat-order" data-id="' + esc(o.id) + '">' + icon("bag") + ' ' + esc(t("cart.checkout")) + '</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }).join("") + '</div>';
+    }
+  } else if (tab === "favs") {
+    if (!favBooks.length) {
+      body = '<div class="cab-empty" style="text-align:center;padding:36px 16px;">' + icon("heart") + '<h3>' + esc(t("cabinet.no_favs")) + '</h3><p class="muted">' + esc(t("cart.empty_text")) + '</p><a class="btn btn--small" href="' + href("catalog") + '" data-act="cabinet-close">' + esc(t("hero.cta_catalog")) + '</a></div>';
+    } else {
+      body = '<div class="grid grid--cab" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));gap:16px;">' + favBooks.map(card).join("") + '</div>';
+    }
+  } else {
+    // Profile
+    body = '<form class="cab-profile-form" data-form="cabinet-profile">' +
+      '<div class="two">' +
+        field("cp-name", "name", t("checkout.name"), "input", CURRENT_USER.name || "", ' autocomplete="name"') +
+        field("cp-phone", "phone", t("checkout.phone"), "input", CURRENT_USER.phone || "", ' type="tel" autocomplete="tel"') +
       '</div>' +
+      field("cp-email", "email", "Email", "input", CURRENT_USER.email || "", ' type="email" autocomplete="email" ' + (CURRENT_USER.id ? 'readonly style="opacity:0.8"' : '')) +
+      field("cp-address", "address", t("cabinet.address"), "input", CURRENT_USER.address || "", ' autocomplete="street-address" placeholder="' + esc(t("checkout.address_hint")) + '"') +
+      '<div class="cab-profile-foot" style="margin-top:16px;display:flex;align-items:center;gap:12px;">' +
+        '<button class="btn btn--rose" type="submit">' + esc(t("cabinet.save_profile")) + '</button>' +
+        (UI.cabinetMsg ? '<span class="cab-msg pill pill--green">' + esc(UI.cabinetMsg) + '</span>' : '') +
+      '</div>' +
+    '</form>';
+  }
+
+  var header = '<div class="cab-header">' +
+    '<div class="cab-user-meta">' +
+      '<div class="cab-avatar">' + (isStoreAdmin() ? icon("shield") : icon("user")) + '</div>' +
+      '<div>' +
+        '<h2>' + esc(CURRENT_USER.name || (isStoreAdmin() ? "Владелец магазина" : "Покупатель")) + '</h2>' +
+        '<span class="muted small">' + esc(CURRENT_USER.email || CURRENT_USER.phone || "") + ' • </span>' +
+        '<span class="pill ' + (isStoreAdmin() ? "pill--rose" : "pill--grey") + '">' + esc(isStoreAdmin() ? t("nav.admin_badge") : "Покупатель") + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="cab-header-actions">' +
+      (isStoreAdmin() ? '<a class="btn btn--small btn--rose" href="' + href("admin") + '">' + icon("shield") + ' ' + esc(t("site.manage")) + '</a>' : '') +
+      '<button class="btn btn--ghost btn--small" type="button" data-act="logout">' + icon("logout") + ' ' + esc(t("nav.logout")) + '</button>' +
+    '</div>' +
+  '</div>';
+
+  if (isFullPage) {
+    return '<div class="wrap"><div class="cabinet-page">' + header + nav + '<div class="cab-content">' + body + '</div></div></div>';
+  }
+
+  return '<div class="cab-modal-inner">' +
+    '<div class="auth-modal-head">' +
+      '<h3>' + esc(t("cabinet.title")) + '</h3>' +
+      '<button class="icon-btn" type="button" data-act="cabinet-close" aria-label="' + esc(t("nav.close")) + '">' + icon("close") + '</button>' +
+    '</div>' +
+    header + nav + '<div class="cab-content" style="max-height:75vh;overflow-y:auto;padding-right:4px;">' + body + '</div>' +
+  '</div>';
+}
+
+function cabinetModalHtml() {
+  if (!UI.cabinetModal || !CURRENT_USER) return "";
+  return '<div class="auth-modal-backdrop is-open" data-act="cabinet-backdrop">' +
+    '<div class="cabinet-modal" role="dialog" aria-modal="true" style="max-width:760px;">' +
+      customerCabinetHtml(false) +
     '</div>' +
   '</div>';
 }
@@ -959,16 +1195,17 @@ function render() {
   else if (v === "privacy" || v === "terms") body = pageLegal(v);
   else if (v === "cart") body = pageCart();
   else if (v === "checkout") body = pageCheckout();
-  else if (v === "account" || v === "admin") body = isStoreAdmin() ? pageAdmin() : pageAdminGate();
+  else if (v === "account") body = isStoreAdmin() ? pageAdmin() : (CURRENT_USER ? customerCabinetHtml(true) : pageAdminGate());
+  else if (v === "admin") body = isStoreAdmin() ? pageAdmin() : pageAdminGate();
   else body = pageNotFound();
   var active = document.activeElement, activeId = active && active.id, selStart = null;
   try { if (active && active.selectionStart != null) selStart = active.selectionStart; } catch (e) { /* not a text field */ }
-  app.innerHTML = header() + '<main id="main">' + body + "</main>" + footer() + drawerHtml() + authModalHtml() + favModalHtml() + (UI.toast ? '<div class="toast is-visible" role="status">' + esc(UI.toast) + "</div>" : "");
+  app.innerHTML = header() + '<main id="main">' + body + "</main>" + footer() + drawerHtml() + authModalHtml() + cabinetModalHtml() + favModalHtml() + (UI.toast ? '<div class="toast is-visible" role="status">' + esc(UI.toast) + "</div>" : "");
   if (activeId) {
     var el = document.getElementById(activeId);
     if (el && el.focus) { el.focus(); try { if (selStart != null) el.setSelectionRange(selStart, selStart); } catch (e) { /* ignore */ } }
   }
-  document.documentElement.style.overflow = (UI.drawer || UI.menu || UI.filters || UI.authModal || UI.favModal) ? "hidden" : "";
+  document.documentElement.style.overflow = (UI.drawer || UI.menu || UI.filters || UI.authModal || UI.cabinetModal || UI.favModal) ? "hidden" : "";
   document.title = "book_lovers.kz";
   wireImages();
 }
@@ -1058,10 +1295,27 @@ var ACTIONS = {
   },
   "more": function () { F.shown += 12; render(); },
   "search-for": function (el) { runSearch(el.dataset.q); },
-  "auth-open": function () { UI.authModal = true; UI.authError = ""; render(); },
+  "auth-open": function () { UI.authModal = true; UI.authTab = "login"; UI.authError = ""; render(); },
   "auth-close": function () { UI.authModal = false; UI.authError = ""; render(); },
   "auth-backdrop": function (el, e) { if (e.target === el) { UI.authModal = false; UI.authError = ""; render(); } },
-  "cabinet-fav": function () { UI.favModal = true; render(); },
+  "auth-set-tab": function (el) { UI.authTab = el.dataset.tab; UI.authError = ""; render(); },
+  "cabinet-open": function (el) {
+    if (!CURRENT_USER) { UI.authModal = true; UI.authTab = "login"; }
+    else { UI.cabinetModal = true; UI.cabTab = (el && el.dataset.tab) || "orders"; }
+    render();
+  },
+  "cabinet-close": function () { UI.cabinetModal = false; render(); },
+  "cabinet-backdrop": function (el, e) { if (e.target === el) { UI.cabinetModal = false; render(); } },
+  "cab-tab": function (el) { UI.cabTab = el.dataset.tab; render(); },
+  "cabinet-fav": function () {
+    if (CURRENT_USER) {
+      UI.cabinetModal = true;
+      UI.cabTab = "favs";
+    } else {
+      UI.favModal = true;
+    }
+    render();
+  },
   "fav-close": function () { UI.favModal = false; render(); },
   "fav-backdrop": function (el, e) { if (e.target === el) { UI.favModal = false; render(); } },
   "toggle-fav": function (el) {
@@ -1069,7 +1323,9 @@ var ACTIONS = {
     if (id) toggleFav(id);
   },
   "logout": function () {
+    if (window.BL_DB) window.BL_DB.signOut();
     setAuthUser(null);
+    UI.cabinetModal = false;
     toast(t("auth.logged_out"));
     if (window.BL_ADMIN) render();
     else go(token("home"));
@@ -1115,6 +1371,17 @@ var ACTIONS = {
       status: "new"
     };
     saveNewOrder(orderRecord);
+    if (window.BL_DB) {
+      window.BL_DB.createOrder(orderRecord);
+    }
+    if (CURRENT_USER && CURRENT_USER.id && window.BL_DB && window.BL_DB.isReady()) {
+      var addrToSave = v.delivery !== "pickup" ? (v.city ? v.city.trim() + ", " : "") + v.address.trim() : CURRENT_USER.address;
+      window.BL_DB.updateProfile(CURRENT_USER.id, {
+        name: v.name.trim(),
+        phone: v.phone.trim(),
+        address: addrToSave
+      });
+    }
     UI.sent = { number: number, text: text }; CART = {}; saveCart(); UI.reviewStep = false; UI.checkout = null; render(); window.scrollTo(0, 0);
   },
   "copy-order": function () {
@@ -1188,6 +1455,111 @@ document.addEventListener("submit", function (e) {
     if (v.budget) lines.push(t("consult.budget") + ": " + t("budget." + v.budget));
     if (v.notes) lines.push(t("consult.notes") + ": " + v.notes.trim());
     openWa(lines.join("\n")); UI.consultSent = true; render(); window.scrollTo(0, 0); return;
+  }
+  if (kind === "auth-login") {
+    var lUser = (v.login || "").trim().toLowerCase(), lPass = (v.password || "").trim();
+    if (!lUser || !lPass) { UI.authError = t("auth.error_required"); render(); return; }
+    if (window.BL_DB && window.BL_DB.isReady()) {
+      UI.authBusy = true;
+      render();
+      window.BL_DB.signIn(lUser, lPass).then(function(res) {
+        UI.authBusy = false;
+        var p = res.profile || {};
+        var userObj = {
+          id: res.user.id,
+          email: res.user.email,
+          name: p.name || (res.user.user_metadata && res.user.user_metadata.name) || res.user.email,
+          phone: p.phone || (res.user.user_metadata && res.user.user_metadata.phone) || "",
+          address: p.address || (res.user.user_metadata && res.user.user_metadata.address) || "",
+          role: p.role || "customer"
+        };
+        setAuthUser(userObj);
+        UI.authModal = false;
+        UI.authError = "";
+        toast(t("auth.logged_in", { name: userObj.name }));
+        syncUserData(userObj.id);
+        render();
+      }).catch(function(err) {
+        UI.authBusy = false;
+        var msg = err.message || t("auth.error_invalid");
+        if (msg.indexOf("Invalid login credentials") !== -1) msg = t("auth.error_invalid");
+        UI.authError = msg;
+        render();
+      });
+      return;
+    }
+    // Local fallback
+    var allU = getUsers();
+    var found = allU.filter(function(u) {
+      return (u.email && u.email.toLowerCase() === lUser) || (u.phone && normPhone(u.phone) === normPhone(lUser));
+    })[0];
+    if (found && found.password === lPass) {
+      setAuthUser(found);
+      UI.authModal = false;
+      UI.authError = "";
+      toast(t("auth.logged_in", { name: found.name }));
+      render();
+    } else {
+      UI.authError = t("auth.error_invalid");
+      render();
+    }
+    return;
+  }
+  if (kind === "auth-register") {
+    var rName = (v.name || "").trim() || "Покупатель", rPhone = (v.phone || "").trim(), rEmail = (v.email || "").trim().toLowerCase(), rAddr = (v.address || "").trim(), rPass = (v.password || "").trim();
+    if (!rPass || (!rEmail && !rPhone)) { UI.authError = t("auth.error_required"); render(); return; }
+    if (!rEmail && rPhone) rEmail = "user_" + normPhone(rPhone) + "@booklovers.kz";
+    if (window.BL_DB && window.BL_DB.isReady()) {
+      UI.authBusy = true;
+      render();
+      window.BL_DB.signUp(rEmail, rPass, { name: rName, phone: rPhone, address: rAddr }).then(function(res) {
+        UI.authBusy = false;
+        if (res.user) {
+          var userObj = { id: res.user.id, email: res.user.email, name: rName, phone: rPhone, address: rAddr, role: "customer" };
+          setAuthUser(userObj);
+          UI.authModal = false;
+          UI.authError = "";
+          toast(t("auth.logged_in", { name: userObj.name }));
+          syncUserData(userObj.id);
+          render();
+        } else {
+          UI.authError = "Не удалось завершить регистрацию";
+          render();
+        }
+      }).catch(function(err) {
+        UI.authBusy = false;
+        UI.authError = err.message || t("auth.error_invalid");
+        render();
+      });
+      return;
+    }
+    // Local fallback
+    var users = getUsers();
+    var newUser = { id: "u_" + Date.now(), name: rName, phone: rPhone, email: rEmail, address: rAddr, password: rPass, role: "customer", registeredAt: new Date().toISOString() };
+    users.push(newUser);
+    saveUsers(users);
+    setAuthUser(newUser);
+    UI.authModal = false;
+    UI.authError = "";
+    toast(t("auth.logged_in", { name: newUser.name }));
+    render();
+    return;
+  }
+  if (kind === "cabinet-profile") {
+    if (!CURRENT_USER) return;
+    CURRENT_USER.name = (v.name || "").trim() || CURRENT_USER.name;
+    CURRENT_USER.phone = (v.phone || "").trim() || CURRENT_USER.phone;
+    CURRENT_USER.email = (v.email || "").trim() || CURRENT_USER.email;
+    CURRENT_USER.address = (v.address || "").trim() || CURRENT_USER.address;
+    setAuthUser(CURRENT_USER);
+    if (window.BL_DB && window.BL_DB.isReady() && CURRENT_USER.id) {
+      window.BL_DB.updateProfile(CURRENT_USER.id, { name: CURRENT_USER.name, phone: CURRENT_USER.phone, address: CURRENT_USER.address });
+    }
+    UI.cabinetMsg = t("cabinet.profile_saved");
+    toast(t("cabinet.profile_saved"));
+    render();
+    setTimeout(function() { UI.cabinetMsg = ""; render(); }, 2500);
+    return;
   }
   if (kind === "auth-admin" || kind === "admin-gate-login") {
     var loginVal = (v.login || "").trim().toLowerCase();
@@ -1291,7 +1663,9 @@ function A(key, p) { var d = AD[R.lang === "en" ? "en" : "ru"]; return fill(d[ke
 function markDirty() { DIRTY++; if (window.BL_ADMIN) { try { localStorage.setItem("bl-admin-draft", JSON.stringify(S)); } catch (e) { /* ignore */ } } }
 
 function adminOrders() {
+  fetchSupabaseOrdersIfNeeded();
   var orders = getOrders();
+  var isSb = window.BL_DB && window.BL_DB.isReady();
   var totalRevenue = orders.reduce(function(sum, o) { return sum + (o.total || 0); }, 0);
   var newCount = orders.filter(function(o) { return !o.status || o.status === "new"; }).length;
 
@@ -1299,6 +1673,9 @@ function adminOrders() {
     '<div class="admin-stat-card"><span class="admin-stat-label">' + esc(t("orders.tab")) + '</span><span class="admin-stat-val">' + orders.length + '</span></div>' +
     '<div class="admin-stat-card"><span class="admin-stat-label">' + esc(t("orders.status_new")) + '</span><span class="admin-stat-val is-accent">' + newCount + '</span></div>' +
     '<div class="admin-stat-card"><span class="admin-stat-label">' + esc(t("cart.total")) + '</span><span class="admin-stat-val">' + price(totalRevenue) + '</span></div>' +
+    '<div class="admin-stat-card"><span class="admin-stat-label">База данных</span><span class="admin-stat-val" style="font-size:16px;padding-top:4px;">' +
+      (isSb ? '<span class="pill pill--green" style="font-size:13px;">● Supabase</span>' : '<span class="pill pill--grey" style="font-size:13px;">○ Локально</span>') +
+    '</span></div>' +
   '</div>';
 
   if (!orders.length) {
@@ -1466,6 +1843,18 @@ function adminSettings() {
     '<div class="two">' + inp("feeCourier", "s_courier", s.feeCourier, "number") + inp("feePost", "s_post", s.feePost, "number") + "</div>" + inp("freeFrom", "s_free", s.freeFrom, "number") + langFields("deliveryInfo", s.deliveryInfo, A("s_delivery_info"), true) +
     "<h2>" + esc(A("s_payment")) + '</h2><div class="stack-8">' + chk("transferOn", t("payment.transfer")) + chk("onDeliveryOn", t("payment.on_delivery")) + "</div></div></div>" +
     '<div><div class="panel"><h2>' + esc(A("s_site")) + "</h2>" + langFields("announcement", s.announcement, A("s_announce")) + '<div class="stack-8" style="margin:12px 0">' + chk("demoMode", A("s_demo")) + "</div>" + inp("lowStock", "s_low", s.lowStock, "number") + "</div>" +
+    '<div class="panel"><h2>' + icon("database") + ' База данных Supabase</h2>' +
+    '<div style="margin-bottom:12px"><span class="pill ' + (window.BL_DB && window.BL_DB.isReady() ? 'pill--green' : 'pill--grey') + '">' +
+    (window.BL_DB && window.BL_DB.isReady() ? '● Подключено к Supabase' : '○ Supabase не настроен (локальный режим)') + '</span></div>' +
+    '<p class="small muted">Сохраняет всех пользователей, профили, корзины, избранное и заказы в облачной базе данных Supabase (PostgreSQL).</p>' +
+    '<div class="field"><label for="as-sb-url">Supabase Project URL</label><input class="input" id="as-sb-url" name="supabaseUrl" value="' + esc((window.BL_DB ? window.BL_DB.getConfig().url : "") || "") + '" placeholder="https://xxxxxxxxxxxx.supabase.co"></div>' +
+    '<div class="field"><label for="as-sb-key">Supabase Anon Key</label><input class="input" id="as-sb-key" name="supabaseAnonKey" value="' + esc((window.BL_DB ? window.BL_DB.getConfig().anonKey : "") || "") + '" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."></div>' +
+    '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">' +
+      '<button class="btn btn--secondary btn--small" type="button" data-act="a-test-supabase">' + icon("database") + ' Проверить подключение</button>' +
+      '<button class="btn btn--small btn--rose" type="button" data-act="a-save-supabase">Сохранить ключи Supabase</button>' +
+    '</div>' +
+    '<p class="small muted" style="margin-top:12px;">SQL-скрипт создания таблиц находится в репозитории: <code>supabase/schema.sql</code>.</p>' +
+    '</div>' +
     '<div class="panel"><h2>Пароль владельца (Admin)</h2>' +
     '<div class="field"><label for="as-admin-pass">Новый пароль учетной записи admin</label>' +
     '<input class="input" id="as-admin-pass" name="adminPassword" type="password" placeholder="Введите новый пароль (минимум 4 символа)" autocomplete="new-password">' +
@@ -1529,9 +1918,48 @@ var ADMIN_ACTIONS = {
     var id = el.dataset.id;
     var orders = getOrders().filter(function(o) { return o.id !== id; });
     try { localStorage.setItem(ORDERS_KEY, JSON.stringify(orders)); } catch (e) {}
+    if (window.BL_DB && window.BL_DB.isReady()) {
+      window.BL_DB.deleteOrder(id);
+    }
     ADMIN.confirm = "";
     toast("Заказ удален");
     render();
+  },
+  "a-test-supabase": function () {
+    var urlEl = document.getElementById("as-sb-url");
+    var keyEl = document.getElementById("as-sb-key");
+    var u = urlEl ? urlEl.value : "";
+    var k = keyEl ? keyEl.value : "";
+    if (u || k) {
+      if (window.BL_DB) window.BL_DB.saveConfig(u, k);
+    }
+    if (!window.BL_DB) {
+      toast("Модуль Supabase не загружен");
+      return;
+    }
+    toast("Проверяем подключение к Supabase…");
+    window.BL_DB.testConnection().then(function (res) {
+      if (res.ok) {
+        toast("✓ " + res.message);
+        render();
+      } else {
+        toast("✗ Ошибка: " + res.message);
+      }
+    });
+  },
+  "a-save-supabase": function () {
+    var urlEl = document.getElementById("as-sb-url");
+    var keyEl = document.getElementById("as-sb-key");
+    var u = urlEl ? urlEl.value : "";
+    var k = keyEl ? keyEl.value : "";
+    if (!window.BL_DB) return;
+    window.BL_DB.saveConfig(u, k);
+    toast("Настройки Supabase сохранены в браузере!");
+    window.BL_DB.testConnection().then(function (res) {
+      if (res.ok) toast("✓ " + res.message);
+      else toast("Предупреждение: " + res.message);
+      render();
+    });
   },
   "a-admin-logout": function () {
     setAuthUser(null);
@@ -1543,6 +1971,9 @@ var ADMIN_ACTIONS = {
 var ADMIN_CHANGE = {
   "order-status": function (el) {
     setOrderStatus(el.dataset.id, el.value);
+    if (window.BL_DB && window.BL_DB.isReady()) {
+      window.BL_DB.updateOrderStatus(el.dataset.id, el.value);
+    }
     toast(t("orders.change_status") + " " + t("orders.status_" + el.value));
     render();
   },
@@ -1623,6 +2054,9 @@ var ADMIN_SUBMIT = {
     ["feeCourier", "feePost", "freeFrom", "lowStock"].forEach(function (k) { var n = intOrNull(v[k]); s[k] = (n == null || isNaN(n)) ? 0 : n; });
     if (v.adminPassword && v.adminPassword.trim().length >= 4) {
       setAdminPass(v.adminPassword.trim());
+    }
+    if (v.supabaseUrl !== undefined || v.supabaseAnonKey !== undefined) {
+      if (window.BL_DB) window.BL_DB.saveConfig(v.supabaseUrl, v.supabaseAnonKey);
     }
     ADMIN.errors = null; ADMIN.msg = A("saved_draft"); markDirty(); render(); window.scrollTo(0, 0);
   }
@@ -1715,6 +2149,50 @@ if (window.BL_ADMIN) {
   } catch (e) { /* ignore */ }
 }
 window.addEventListener("hashchange", function () { var h = location.hash.slice(1); if (h && h !== token(R.view, R.arg)) go(h, false); });
+function initSupabaseIntegration() {
+  if (!window.BL_DB) return;
+  window.BL_DB.getSession().then(function (session) {
+    if (session && session.user) {
+      window.BL_DB.getProfile(session.user.id).then(function (profile) {
+        var userObj = {
+          id: session.user.id,
+          email: session.user.email,
+          name: (profile && profile.name) || (session.user.user_metadata && session.user.user_metadata.name) || session.user.email,
+          phone: (profile && profile.phone) || (session.user.user_metadata && session.user.user_metadata.phone) || "",
+          address: (profile && profile.address) || (session.user.user_metadata && session.user.user_metadata.address) || "",
+          role: (profile && profile.role) || "customer"
+        };
+        setAuthUser(userObj);
+        syncUserData(userObj.id);
+        render();
+      });
+    }
+  });
+
+  window.BL_DB.onAuthStateChange(function (event, session) {
+    if (event === "SIGNED_IN" && session && session.user) {
+      window.BL_DB.getProfile(session.user.id).then(function (profile) {
+        var userObj = {
+          id: session.user.id,
+          email: session.user.email,
+          name: (profile && profile.name) || (session.user.user_metadata && session.user.user_metadata.name) || session.user.email,
+          phone: (profile && profile.phone) || (session.user.user_metadata && session.user.user_metadata.phone) || "",
+          address: (profile && profile.address) || (session.user.user_metadata && session.user.user_metadata.address) || "",
+          role: (profile && profile.role) || "customer"
+        };
+        setAuthUser(userObj);
+        syncUserData(userObj.id);
+        render();
+      });
+    } else if (event === "SIGNED_OUT") {
+      if (CURRENT_USER && CURRENT_USER.role === "customer") {
+        setAuthUser(null);
+        render();
+      }
+    }
+  });
+}
+
 (function start() {
   var saved = store("bl-lang");
   if (LANGS.indexOf(saved) !== -1) R.lang = saved;
@@ -1722,6 +2200,7 @@ window.addEventListener("hashchange", function () { var h = location.hash.slice(
   var h = location.hash.slice(1);
   if (h && !window.BL_ADMIN) { var r = parseToken(h); if (r.lang) R.lang = r.lang; R.view = r.view; R.arg = r.arg; if (r.view === "catalog" && r.arg) { R.view = "x"; go(h, false); return; } }
   render();
+  initSupabaseIntegration();
 })();
 /* editor mode is switched on only by admin.html */
 })();

@@ -22,12 +22,48 @@ Upload the **whole folder** (keep the folders inside it) to any web hosting:
 |---|---|
 | `index.html` | The shop (all pages: home, catalog, book pages, children's books, offers, reviews, contacts, cart, checkout) |
 | `admin.html` | Your catalog editor (not linked from the shop) |
+| `supabase/schema.sql` | Полная схема PostgreSQL базы данных Supabase (пользователи, заказы, избранное, корзина, RLS) |
+| `js/supabase-config.js` | Файл настроек подключения Supabase (URL и Anon Key) |
+| `js/supabase.js` | Клиент работы с Supabase (Auth, Profiles, Orders, Favorites, Cart) |
 | `data/store.js` | All books, prices, stock, promotions, reviews and contacts |
 | `js/i18n.js` | All interface texts in Russian, Kazakh and English |
 | `js/app.js` | The shop's logic: search, filters, cart, discounts, checkout |
 | `css/style.css` | The design |
 | `images/covers/` | Book covers |
 | `fonts/` | Lora and Inter fonts (free licence, see LICENSE.txt) |
+
+## Подключение базы данных Supabase (PostgreSQL, Auth и данные пользователей)
+
+Магазин полностью интегрирован с **Supabase** для надежного облачного хранения всех данных пользователей:
+
+### Что сохраняется в Supabase:
+1. **Пользователи и профили** (`auth.users`, `public.profiles`):
+   - Регистрация и вход по Email и паролю (Supabase Auth).
+   - Имя, номер телефона и адрес доставки сохраняются в профиле и автоматически подставляются при оформлении заказов.
+   - Личный кабинет покупателя с редактированием профиля.
+2. **Заказы** (`public.orders`):
+   - Каждый оформленный заказ автоматически сохраняется в таблицу `orders` со списком книг, суммами, скидками, адресом доставки и статусом.
+   - Заказы привязываются к аккаунту покупателя (`user_id`) и отображаются в Личном кабинете во вкладке «Мои заказы».
+   - В панели администратора доступен просмотр всех заказов и смена их статусов.
+3. **Избранные книги** (`public.favorites`):
+   - Список понравившихся книг сохраняется в облаке и синхронизируется между всеми устройствами покупателя.
+4. **Корзина** (`public.cart_items`):
+   - Синхронизация товаров в корзине для авторизованных пользователей.
+5. **Безопасность (RLS)**:
+   - Включен Row Level Security (RLS) на всех таблицах. Покупатели видят только свои заказы и данные.
+
+### Быстрый запуск за 2 минуты:
+1. Создайте бесплатный проект на [supabase.com](https://supabase.com).
+2. В панели Supabase откройте **SQL Editor** -> нажмите **New query**.
+3. Скопируйте содержимое файла [`supabase/schema.sql`](supabase/schema.sql), вставьте и нажмите кнопку **Run**. Все таблицы, связи, триггеры и политики безопасности будут созданы автоматически.
+4. Перейдите в **Project Settings -> API** и скопируйте:
+   - **Project URL** (например, `https://abcdefghijkl.supabase.co`)
+   - **Project API Keys -> anon / public** (начинается с `eyJ...` или `sb_publishable_...`)
+5. Укажите эти ключи одним из двух способов:
+   - **Через сайт**: войдите в панель управления (`admin.html`), откройте вкладку «Настройки» -> раздел «База данных Supabase», вставьте ключи и нажмите «Сохранить».
+   - **Либо в коде**: откройте `js/supabase-config.js` и впишите URL и Anon Key в объект `window.SUPABASE_CONFIG`.
+
+> **Автономный режим**: если Supabase еще не настроен или отсутствует интернет, сайт продолжает работать, сохраняя данные локально в браузере.
 
 ## How orders work
 
