@@ -133,6 +133,45 @@
         role: "customer"
       };
 
+      // 1. Попытка быстрой регистрации через хранимую процедуру без лимитов email rate limit
+      try {
+        var rpcRes = await client.rpc("register_customer", {
+          p_email: email,
+          p_password: password,
+          p_name: meta.name,
+          p_phone: meta.phone,
+          p_address: meta.address
+        });
+
+        if (rpcRes.error) {
+          console.warn("RPC register_customer notice:", rpcRes.error);
+        } else if (rpcRes.data) {
+          if (rpcRes.data.success === false) {
+            throw new Error(rpcRes.data.error || "Ошибка регистрации");
+          }
+          if (rpcRes.data.success === true) {
+            // Мгновенный вход под созданным пользователем
+            var loginRes = await client.auth.signInWithPassword({
+              email: email,
+              password: password
+            });
+            if (!loginRes.error && loginRes.data && loginRes.data.user) {
+              return {
+                user: loginRes.data.user,
+                session: loginRes.data.session,
+                needsEmailConfirmation: false
+              };
+            }
+          }
+        }
+      } catch (rpcErr) {
+        if (rpcErr.message && (rpcErr.message.indexOf("уже существует") !== -1 || rpcErr.message.indexOf("обязательны") !== -1)) {
+          throw rpcErr;
+        }
+        console.warn("RPC fallback to client.auth.signUp:", rpcErr);
+      }
+
+      // 2. Стандартный метод регистрации Supabase Auth (fallback)
       var res = await client.auth.signUp({
         email: email,
         password: password,

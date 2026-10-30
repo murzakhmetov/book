@@ -268,3 +268,105 @@ grant usage on schema public to anon, authenticated;
 grant all on all tables in schema public to anon, authenticated;
 grant all on all sequences in schema public to anon, authenticated;
 grant all on all routines in schema public to anon, authenticated;
+
+-- ====================================================================
+-- 7. ПРОЦЕДУРА МГНОВЕННОЙ РЕГИСТРАЦИИ ПОКУПАТЕЛЕЙ (public.register_customer)
+-- Позволяет регистрировать покупателей без задержек подтверждения email
+-- ====================================================================
+create or replace function public.register_customer(
+  p_email text,
+  p_password text,
+  p_name text default '',
+  p_phone text default '',
+  p_address text default ''
+)
+returns json
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  v_user_id uuid;
+  v_encrypted_pw text;
+begin
+  p_email := lower(trim(p_email));
+  if p_email = '' or p_password = '' then
+    return json_build_object('success', false, 'error', 'Email и пароль обязательны');
+  end if;
+
+  if exists (select 1 from auth.users where email = p_email) then
+    return json_build_object('success', false, 'error', 'Пользователь с таким email уже существует');
+  end if;
+
+  v_user_id := gen_random_uuid();
+  v_encrypted_pw := crypt(p_password, gen_salt('bf', 10));
+
+  insert into auth.users (
+    id,
+    instance_id,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    confirmation_token,
+    recovery_token,
+    email_change_token_new,
+    email_change,
+    phone_change,
+    phone_change_token,
+    email_change_token_current,
+    reauthentication_token,
+    raw_app_meta_data,
+    raw_user_meta_data,
+    aud,
+    role,
+    created_at,
+    updated_at
+  ) values (
+    v_user_id,
+    '00000000-0000-0000-0000-000000000000',
+    p_email,
+    v_encrypted_pw,
+    now(),
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    jsonb_build_object('name', p_name, 'phone', p_phone, 'address', p_address, 'role', 'customer'),
+    'authenticated',
+    'authenticated',
+    now(),
+    now()
+  );
+
+  insert into auth.identities (
+    provider_id,
+    user_id,
+    identity_data,
+    provider,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  ) values (
+    v_user_id::text,
+    v_user_id,
+    jsonb_build_object('sub', v_user_id::text, 'email', p_email),
+    'email',
+    now(),
+    now(),
+    now()
+  );
+
+  return json_build_object(
+    'success', true,
+    'user_id', v_user_id
+  );
+end;
+$$;
+
+grant execute on function public.register_customer(text, text, text, text, text) to anon, authenticated;
+
