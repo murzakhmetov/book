@@ -231,35 +231,51 @@ create policy "Users can manage own cart"
 
 -- ====================================================================
 -- 5. ТАБЛИЦА ОТЗЫВОВ (public.reviews)
--- Хранит отзывы покупателей с модерацией.
+-- Хранит отзывы покупателей с модерацией и публикацией в реальном времени.
 -- ====================================================================
 create table if not exists public.reviews (
-  id uuid default gen_random_uuid() primary key,
+  id text primary key default gen_random_uuid()::text,
   user_id uuid references auth.users(id) on delete set null,
   name text not null,
   book text default '',
   rating integer not null check (rating >= 1 and rating <= 5),
   text text not null,
   lang text default 'ru' not null,
-  status text default 'pending' check (status in ('pending', 'approved', 'rejected')) not null,
+  sample boolean default false not null,
+  date text default '',
+  status text default 'approved' check (status in ('approved', 'hidden', 'pending', 'rejected')) not null,
   created_at timestamptz default now() not null
 );
 
 create index if not exists idx_reviews_status on public.reviews(status);
+create index if not exists idx_reviews_created_at on public.reviews(created_at desc);
 
 alter table public.reviews enable row level security;
 
-drop policy if exists "Anyone can submit a review" on public.reviews;
-create policy "Anyone can submit a review"
+drop policy if exists "Allow select reviews" on public.reviews;
+create policy "Allow select reviews"
+  on public.reviews for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "Allow insert reviews" on public.reviews;
+create policy "Allow insert reviews"
   on public.reviews for insert
   to anon, authenticated
   with check (true);
 
-drop policy if exists "Public can view approved reviews" on public.reviews;
-create policy "Public can view approved reviews"
-  on public.reviews for select
+drop policy if exists "Allow update reviews" on public.reviews;
+create policy "Allow update reviews"
+  on public.reviews for update
   to anon, authenticated
-  using (status = 'approved');
+  using (true)
+  with check (true);
+
+drop policy if exists "Allow delete reviews" on public.reviews;
+create policy "Allow delete reviews"
+  on public.reviews for delete
+  to anon, authenticated
+  using (true);
 
 -- ====================================================================
 -- 6. ПРАВА ДОСТУПА ДЛЯ DATA API (anon, authenticated)

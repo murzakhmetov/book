@@ -138,6 +138,27 @@ function fetchSupabaseOrdersIfNeeded() {
   });
 }
 
+var SB_REVIEWS_FETCHED = false;
+function fetchSupabaseReviewsIfNeeded(force) {
+  if ((SB_REVIEWS_FETCHED && !force) || !window.BL_DB || !window.BL_DB.isReady()) return;
+  SB_REVIEWS_FETCHED = true;
+  var onlyApproved = !window.BL_ADMIN && !isStoreAdmin();
+  window.BL_DB.getReviews(onlyApproved).then(function(dbReviews) {
+    if (Array.isArray(dbReviews) && dbReviews.length) {
+      var map = {};
+      dbReviews.forEach(function(r) { map[r.id] = r; });
+      var merged = dbReviews.slice();
+      (S.reviews || []).forEach(function(lr) {
+        if (!map[lr.id]) {
+          merged.push(lr);
+        }
+      });
+      S.reviews = merged;
+      render();
+    }
+  });
+}
+
 function fetchUserOrdersIfNeeded(userId) {
   if (!window.BL_DB || !window.BL_DB.isReady() || !userId) return;
   window.BL_DB.getUserOrders(userId).then(function(dbOrders) {
@@ -472,7 +493,8 @@ function header() {
   var h = "";
   if (isStoreAdmin() || (EDITOR && window.BL_ADMIN)) {
     h += '<div class="editbar"><div class="wrap"><span>👑 ' + esc(CURRENT_USER && CURRENT_USER.name ? CURRENT_USER.name : "Владелец магазина") + (DIRTY ? ", " + esc(A("unsaved", { n: DIRTY })) : "") + '</span><span class="editbar__actions">' +
-      (DIRTY || window.BL_ADMIN ? '<button class="btn btn--small btn--light" type="button" data-act="publish"' + (ADMIN.busy ? " disabled" : "") + ">" + esc(A("publish")) + "</button>" : "") +
+      '<button class="btn btn--small btn--light" type="button" data-act="publish"' + (ADMIN.busy ? " disabled" : "") + ' title="Опубликовать изменения">' + icon("check-circle") + ' ' + esc(A("publish")) + '</button>' +
+      '<button class="btn btn--small btn--ghost-light desktop-only" type="button" data-act="download-store" title="Скачать файл store.js для хостинга">' + esc(A("download_backup")) + '</button>' +
       (R.view !== "admin" ? '<a class="btn btn--small btn--ghost-light" href="' + href("admin") + '">' + esc(t("site.manage")) + "</a>" : '<a class="btn btn--small btn--ghost-light" href="' + href("home") + '">' + esc(A("preview")) + "</a>") +
       '<button class="btn btn--small btn--ghost-light" type="button" data-act="logout">' + icon("logout") + ' ' + esc(t("nav.logout")) + '</button>' +
       "</span></div></div>";
@@ -535,6 +557,7 @@ function footer() {
 
 /* ===================================================================== pages */
 function pageHome() {
+  fetchSupabaseReviewsIfNeeded();
   var prods = publicProducts();
   var byRank = function (a, b) { return a.rank - b.rank; };
   var trending = prods.filter(function (p) { return p.trending; }).sort(byRank).slice(0, 8);
@@ -756,6 +779,7 @@ function waForm(fields, note, submitKey, form) {
   return form + '<p class="small muted">' + esc(note) + '</p><button class="btn" type="submit">' + icon("whatsapp") + esc(t(submitKey)) + "</button>";
 }
 function pageReviews() {
+  fetchSupabaseReviewsIfNeeded();
   var list = S.reviews.filter(function (r) { return r.status === "approved"; }), samples = list.some(function (r) { return r.sample; });
   var avg = list.length ? list.reduce(function (a, r) { return a + r.rating; }, 0) / list.length : 0;
   var h = '<div class="wrap"><div class="page-head"><h1>' + esc(t("reviews.title")) + "</h1>" +
@@ -1593,8 +1617,8 @@ function openWa(text) {
 /* ===================================================================== admin (owner & editors only) */
 var AD = {
   ru: {
-    unsaved: "несохранённых изменений: {n}", publish: "Скачать store.js", publishing: "Публикуем…", view_site: "К сайту", preview: "Предпросмотр сайта", draft_restored: "Открыты ваши последние правки из этого браузера. Если вы уже загрузили новый store.js на хостинг, всё в порядке; если нет — нажмите «Скачать store.js».", reset_draft: "Сбросить правки",
-    title: "Управление магазином", intro: "Это редактор каталога. Изменения видны только вам, пока вы не нажмёте «Скачать store.js» и не замените этим файлом data/store.js на хостинге.",
+    unsaved: "несохранённых изменений: {n}", publish: "Опубликовать изменения", download_backup: "Скачать store.js", publishing: "Публикуем…", view_site: "К сайту", preview: "Предпросмотр сайта", draft_restored: "Открыты ваши последние правки из этого браузера. Нажмите «Опубликовать изменения», чтобы они появились на сайте.", reset_draft: "Сбросить правки",
+    title: "Управление магазином", intro: "Это редактор магазина. Чтобы новые отзывы и изменения сразу появились на сайте, нажмите кнопку «Опубликовать изменения» вверху.",
     tab_orders: "Заказы", tab_books: "Книги", tab_promos: "Акции", tab_reviews: "Отзывы", tab_settings: "Настройки", tab_import: "Импорт и экспорт",
     search: "Название, автор или артикул", add_book: "Добавить книгу", edit_book: "Редактировать книгу", book: "Книга", price: "Цена", stock: "Остаток", showcase: "Витрина", status: "Статус",
     active: "На сайте", hidden: "Скрыта", hide: "Скрыть", show: "Показать", edit: "Изменить", del: "Удалить", del_confirm: "Точно удалить?", yes_del: "Да, удалить", cancel: "Отмена",
@@ -1604,13 +1628,13 @@ var AD = {
     f_rank: "Порядок на витрине (меньше — выше)", f_cover: "Обложка", f_upload: "Загрузить обложку", f_cover_hint: "JPG, PNG или WebP до 8 МБ, вертикальная 2:3.", f_cover_url: "Путь к обложке (images/covers/…) или ссылка https://",
     uploading: "Загружаем…", upload_fail: "Не удалось загрузить файл: {err}", upload_na: "Загрузка файлов здесь недоступна — укажите ссылку на изображение.",
     save_book: "Сохранить книгу", none: "Не указано", choose: "Выберите…", required: "Обязательное поле", bad_price: "Целое число от 0", bad_sale: "Должна быть меньше обычной цены",
-    saved_draft: "Сохранено. Не забудьте опубликовать изменения.", demo_tag: "Демо",
+    saved_draft: "Сохранено. Не забудьте нажать «Опубликовать изменения» вверху.", demo_tag: "Демо",
     promos_intro: "Скидки применяются автоматически. Даты — по времени Казахстана (UTC+5). Скидки не суммируются: книга получает самую выгодную цену.",
     add_promo: "Новая акция", p_name: "Название (для вас)", p_kind: "Тип", k_percent: "Процент", k_fixed: "Сумма, ₸", k_bundle: "За комплект (процент)", p_value: "Размер скидки",
     p_min: "Минимум книг в корзине", p_scope: "На что", s_all: "Все книги", s_category: "Раздел или жанр", s_products: "Выбранные книги", p_badge: "Бейдж на обложке", p_desc: "Описание в «Акциях»",
     p_starts: "Начало", p_ends: "Окончание", p_active: "Акция включена", p_home: "Показывать в «Акциях» на главной", save_promo: "Сохранить акцию",
     st_active: "Действует", st_scheduled: "Запланирована", st_expired: "Завершена", st_inactive: "Выключена", bad_percent: "Процент от 1 до 90", bad_amount: "Сумма от 1 ₸", bad_min: "Минимум 2", bad_dates: "Окончание должно быть позже начала", need_products: "Выберите книги",
-    reviews_intro: "Покупатели присылают отзывы в WhatsApp. Добавьте настоящий отзыв здесь, и он появится на сайте.", add_review: "Добавить отзыв", r_name: "Имя", r_text: "Текст", r_rating: "Оценка", r_book: "Книга", r_lang: "Язык", r_sample: "Пример (на сайте будет пометка «Пример отзыва»)",
+    reviews_intro: "Покупатели присылают отзывы в WhatsApp. Добавьте отзыв здесь, нажмите «Опубликовать», и он сразу появится на сайте.", add_review: "Добавить отзыв", r_name: "Имя", r_text: "Текст", r_rating: "Оценка", r_book: "Книга", r_lang: "Язык", r_sample: "Пример (на сайте будет пометка «Пример отзыва»)",
     publish_r: "Опубликовать", hide_r: "Скрыть", save_review: "Сохранить отзыв", r_hidden: "скрыт",
     s_contacts: "Контакты и соцсети", s_whatsapp: "WhatsApp", s_wa_ok: "Ссылка: wa.me/{d} ({p})", s_wa_bad: "Нужен номер Казахстана, например 87473624638", s_phone: "Телефон", s_email: "E-mail",
     s_ig: "Instagram (https://…)", s_tt: "TikTok (https://…)", s_url_bad: "Ссылка должна начинаться с https://", s_city: "Город / регион", s_pickup: "Адрес самовывоза", s_hours: "Часы работы",
@@ -1627,8 +1651,8 @@ var AD = {
   }
 };
 AD.en = {
-  unsaved: "unsaved changes: {n}", publish: "Download store.js", publishing: "Publishing…", view_site: "Back to site", preview: "Preview the site", draft_restored: "Your latest edits from this browser are open. If you already uploaded the new store.js, all is well; if not, press “Download store.js”.", reset_draft: "Discard edits",
-  title: "Manage the shop", intro: "This is the catalog editor. Changes are visible only to you until you press “Download store.js” and replace data/store.js on the hosting with that file.",
+  unsaved: "unsaved changes: {n}", publish: "Publish changes", download_backup: "Download store.js", publishing: "Publishing…", view_site: "Back to site", preview: "Preview the site", draft_restored: "Your latest edits from this browser are open. Click “Publish changes” to make them live on the site.", reset_draft: "Discard edits",
+  title: "Manage the shop", intro: "This is the shop editor. Click “Publish changes” in the top bar to make all reviews and edits live for visitors.",
   tab_orders: "Orders", tab_books: "Books", tab_promos: "Promotions", tab_reviews: "Reviews", tab_settings: "Settings", tab_import: "Import & export",
   search: "Title, author or SKU", add_book: "Add a book", edit_book: "Edit book", book: "Book", price: "Price", stock: "Stock", showcase: "Showcase", status: "Status",
   active: "On site", hidden: "Hidden", hide: "Hide", show: "Show", edit: "Edit", del: "Delete", del_confirm: "Delete for good?", yes_del: "Yes, delete", cancel: "Cancel",
@@ -1638,13 +1662,13 @@ AD.en = {
   f_rank: "Showcase order (lower first)", f_cover: "Cover", f_upload: "Upload cover", f_cover_hint: "JPG, PNG or WebP up to 8 MB, portrait 2:3.", f_cover_url: "Cover path (images/covers/…) or https:// link",
   uploading: "Uploading…", upload_fail: "Upload failed: {err}", upload_na: "File upload isn't available here — use an image link.",
   save_book: "Save book", none: "Not set", choose: "Choose…", required: "Required", bad_price: "Whole number from 0", bad_sale: "Must be lower than the regular price",
-  saved_draft: "Saved. Remember to publish your changes.", demo_tag: "Demo",
+  saved_draft: "Saved. Remember to click “Publish changes” above.", demo_tag: "Demo",
   promos_intro: "Discounts apply automatically. Dates are Kazakhstan time (UTC+5). Discounts don't stack: each book gets its best price.",
   add_promo: "New promotion", p_name: "Name (for you)", p_kind: "Type", k_percent: "Percent", k_fixed: "Amount, ₸", k_bundle: "Bundle (percent)", p_value: "Discount",
   p_min: "Minimum books in cart", p_scope: "Applies to", s_all: "All books", s_category: "Section or genre", s_products: "Selected books", p_badge: "Cover badge", p_desc: "Description in Offers",
   p_starts: "Starts", p_ends: "Ends", p_active: "Promotion on", p_home: "Show in Offers on the home page", save_promo: "Save promotion",
   st_active: "Active", st_scheduled: "Scheduled", st_expired: "Ended", st_inactive: "Off", bad_percent: "Percent 1–90", bad_amount: "Amount from 1 ₸", bad_min: "At least 2", bad_dates: "End must be after start", need_products: "Choose books",
-  reviews_intro: "Customers send reviews on WhatsApp. Add a real review here and it appears on the site.", add_review: "Add review", r_name: "Name", r_text: "Text", r_rating: "Rating", r_book: "Book", r_lang: "Language", r_sample: "Sample (the site marks it “Sample review”)",
+  reviews_intro: "Customers send reviews on WhatsApp. Add a review here, click “Publish”, and it appears on the site immediately.", add_review: "Add review", r_name: "Name", r_text: "Text", r_rating: "Rating", r_book: "Book", r_lang: "Language", r_sample: "Sample (the site marks it “Sample review”)",
   publish_r: "Publish", hide_r: "Hide", save_review: "Save review", r_hidden: "hidden",
   s_contacts: "Contacts & social", s_whatsapp: "WhatsApp", s_wa_ok: "Link: wa.me/{d} ({p})", s_wa_bad: "Enter a Kazakhstan number, e.g. 87473624638", s_phone: "Phone", s_email: "E-mail",
   s_ig: "Instagram (https://…)", s_tt: "TikTok (https://…)", s_url_bad: "The link must start with https://", s_city: "City / region", s_pickup: "Pickup address", s_hours: "Opening hours",
@@ -1819,7 +1843,16 @@ function adminPromoForm() {
     '<button class="btn btn--block" type="submit" style="margin-top:16px">' + esc(A("save_promo")) + '</button><button class="btn btn--ghost btn--block" type="button" data-act="a-cancel" style="margin-top:8px">' + esc(A("cancel")) + "</button></div></div></div></form>";
 }
 function adminReviews() {
-  return '<p class="small muted">' + esc(A("reviews_intro")) + '</p><div class="form-grid"><div class="table-wrap"><table class="table"><tbody>' + S.reviews.map(function (r) {
+  fetchSupabaseReviewsIfNeeded();
+  var isSb = window.BL_DB && window.BL_DB.isReady();
+  var headBar = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">' +
+    '<p class="small muted" style="margin:0">' + esc(A("reviews_intro")) + '</p>' +
+    '<div>' +
+      (isSb ? '<button class="btn btn--small btn--sage" type="button" data-act="publish" title="Опубликовать все отзывы в базу Supabase">' + icon("database") + ' ' + esc(A("publish")) + '</button>' : '') +
+    '</div>' +
+  '</div>';
+
+  return headBar + '<div class="form-grid"><div class="table-wrap"><table class="table"><tbody>' + S.reviews.map(function (r) {
     return '<tr><td style="max-width:520px"><strong>' + esc(r.name) + "</strong> " + stars(r.rating) + (r.sample ? ' <span class="pill pill--grey">' + esc(t("demo.review_label")) + "</span>" : "") + (r.status !== "approved" ? ' <span class="pill pill--amber">' + esc(A("r_hidden")) + "</span>" : "") +
       '<div class="sub">' + esc(r.text) + "</div></td>" + '<td class="nowrap"><button class="btn btn--ghost btn--xs" type="button" data-act="a-review-status" data-id="' + esc(r.id) + '">' + esc(r.status === "approved" ? A("hide_r") : A("publish_r")) + "</button> " +
       (ADMIN.confirm === r.id ? '<button class="btn btn--danger btn--xs" type="button" data-act="a-del-review" data-id="' + esc(r.id) + '">' + esc(A("yes_del")) + "</button>" : '<button class="link-btn small" type="button" data-act="a-del-ask" data-id="' + esc(r.id) + '">' + esc(A("del")) + "</button>") + "</td></tr>";
@@ -1880,6 +1913,7 @@ function readLang(v, prefix) { var o = {}; LANGS.forEach(function (l) { o[l] = (
 
 var ADMIN_ACTIONS = {
   "publish": function () { publishSite(); },
+  "download-store": function () { downloadStoreFile(); ADMIN.msg = A("pub_ok"); render(); },
   "admin-edit": function (el) { var p = productById(el.dataset.id); ADMIN.tab = "books"; ADMIN.edit = { isNew: false, draft: JSON.parse(JSON.stringify(p)) }; ADMIN.errors = null; go(token("admin")); },
   "a-tab": function (el) { ADMIN.tab = el.dataset.tab; ADMIN.edit = null; ADMIN.promo = null; ADMIN.errors = null; ADMIN.confirm = ""; ADMIN.msg = ""; render(); },
   "a-new-book": function () {
@@ -1900,8 +1934,25 @@ var ADMIN_ACTIONS = {
   "a-edit-promo": function (el) { var p = S.promotions.filter(function (x) { return x.id === el.dataset.id; })[0]; ADMIN.promo = { isNew: false, draft: JSON.parse(JSON.stringify(p)) }; ADMIN.errors = null; render(); window.scrollTo(0, 0); },
   "a-toggle-promo": function (el) { var p = S.promotions.filter(function (x) { return x.id === el.dataset.id; })[0]; p.active = !p.active; markDirty(); render(); },
   "a-del-promo": function (el) { S.promotions = S.promotions.filter(function (x) { return x.id !== el.dataset.id; }); ADMIN.confirm = ""; markDirty(); render(); },
-  "a-review-status": function (el) { var r = S.reviews.filter(function (x) { return x.id === el.dataset.id; })[0]; r.status = r.status === "approved" ? "hidden" : "approved"; markDirty(); render(); },
-  "a-del-review": function (el) { S.reviews = S.reviews.filter(function (x) { return x.id !== el.dataset.id; }); ADMIN.confirm = ""; markDirty(); render(); },
+  "a-review-status": function (el) {
+    var r = S.reviews.filter(function (x) { return x.id === el.dataset.id; })[0];
+    if (!r) return;
+    r.status = r.status === "approved" ? "hidden" : "approved";
+    if (window.BL_DB && window.BL_DB.isReady()) {
+      window.BL_DB.updateReviewStatus(r.id, r.status);
+      ADMIN.msg = "✓ Статус отзыва обновлён (" + (r.status === "approved" ? "опубликован на сайте" : "скрыт") + ").";
+    }
+    markDirty(); render();
+  },
+  "a-del-review": function (el) {
+    var revId = el.dataset.id;
+    S.reviews = S.reviews.filter(function (x) { return x.id !== revId; });
+    if (window.BL_DB && window.BL_DB.isReady()) {
+      window.BL_DB.deleteReview(revId);
+      ADMIN.msg = "✓ Отзыв удалён из базы данных.";
+    }
+    ADMIN.confirm = ""; markDirty(); render();
+  },
   "a-remove-demo": function () {
     S.products = S.products.filter(function (p) { return !p.demo; }); S.reviews = S.reviews.filter(function (r) { return !r.sample; }); S.promotions = S.promotions.filter(function (p) { return !p.demo; });
     S.settings.demoMode = false; ADMIN.confirm = ""; ADMIN.msg = A("demo_done"); markDirty(); render();
@@ -2039,8 +2090,29 @@ var ADMIN_SUBMIT = {
   },
   "a-review": function (f, v) {
     if (!(v.name || "").trim() || !(v.text || "").trim()) return;
-    S.reviews.unshift({ id: "r" + Date.now(), name: v.name.trim(), text: v.text.trim(), rating: +v.rating || 5, book: (v.book || "").trim(), lang: v.lang, sample: !!v.sample, status: "approved", date: new Date().toISOString().slice(0, 10) });
-    ADMIN.msg = A("saved_draft"); markDirty(); render();
+    var newRev = {
+      id: "r" + Date.now(),
+      name: v.name.trim(),
+      text: v.text.trim(),
+      rating: +v.rating || 5,
+      book: (v.book || "").trim(),
+      lang: v.lang,
+      sample: !!v.sample,
+      status: "approved",
+      date: new Date().toISOString().slice(0, 10)
+    };
+    S.reviews.unshift(newRev);
+    if (window.BL_DB && window.BL_DB.isReady()) {
+      ADMIN.busy = true; render();
+      window.BL_DB.saveReview(newRev).then(function() {
+        ADMIN.busy = false;
+        ADMIN.msg = "✓ Отзыв успешно сохранён и опубликован в базе данных!";
+        render();
+      });
+    } else {
+      ADMIN.msg = A("saved_draft");
+    }
+    markDirty(); render();
   },
   "a-settings": function (f, v) {
     var s = S.settings, e = {};
@@ -2128,13 +2200,32 @@ function parseImport(text) {
 }
 
 /* ---- save: download a new data/store.js to upload to the hosting */
-function publishSite() {
+function downloadStoreFile() {
   S.updated = new Date().toISOString().slice(0, 10);
   var text = "/* book_lovers.kz catalog data. Edit with admin.html, then replace this file on the hosting. */\n" +
     "window.BL_STORE = " + JSON.stringify(S, null, 1) + ";\n";
   downloadFile("store.js", text, "text/javascript");
-  try { localStorage.setItem("bl-admin-draft", JSON.stringify(S)); } catch (e) { /* ignore */ }
-  DIRTY = 0; ADMIN.msg = A("pub_ok"); render();
+}
+
+function publishSite() {
+  if (window.BL_DB && window.BL_DB.isReady()) {
+    ADMIN.busy = true; render();
+    window.BL_DB.publishAllReviews(S.reviews).then(function (ok) {
+      ADMIN.busy = false;
+      try { localStorage.setItem("bl-admin-draft", JSON.stringify(S)); } catch (e) { /* ignore */ }
+      DIRTY = 0;
+      if (ok) {
+        ADMIN.msg = "✓ Изменения успешно опубликованы! Отзывы синхронизированы с базой данных Supabase и сразу видны на сайте.";
+      } else {
+        ADMIN.msg = "Изменения сохранены локально в браузере.";
+      }
+      render();
+    });
+  } else {
+    downloadStoreFile();
+    try { localStorage.setItem("bl-admin-draft", JSON.stringify(S)); } catch (e) { /* ignore */ }
+    DIRTY = 0; ADMIN.msg = A("pub_ok"); render();
+  }
 }
 window.addEventListener("beforeunload", function (e) { if (DIRTY) { e.preventDefault(); e.returnValue = ""; } });
 
@@ -2151,6 +2242,7 @@ if (window.BL_ADMIN) {
 window.addEventListener("hashchange", function () { var h = location.hash.slice(1); if (h && h !== token(R.view, R.arg)) go(h, false); });
 function initSupabaseIntegration() {
   if (!window.BL_DB) return;
+  fetchSupabaseReviewsIfNeeded();
   window.BL_DB.getSession().then(function (session) {
     if (session && session.user) {
       window.BL_DB.getProfile(session.user.id).then(function (profile) {

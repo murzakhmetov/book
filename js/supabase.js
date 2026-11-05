@@ -514,6 +514,112 @@
       } catch (e) {
         console.warn("saveCart notice:", e);
       }
+    },
+
+    /* ==================================================================== REVIEWS */
+    /**
+     * Загрузить отзывы из базы данных Supabase.
+     * @param {boolean} onlyApproved - загрузить только опубликованные (для покупателей)
+     */
+    getReviews: async function (onlyApproved) {
+      if (!this.isReady()) return null;
+      try {
+        var query = client.from("reviews").select("*").order("created_at", { ascending: false });
+        if (onlyApproved) {
+          query = query.eq("status", "approved");
+        }
+        var res = await query;
+        if (res.error) {
+          console.warn("getReviews notice:", res.error.message);
+          return null;
+        }
+        return res.data || [];
+      } catch (e) {
+        console.warn("getReviews error:", e);
+        return null;
+      }
+    },
+
+    /**
+     * Сохранить / обновить отзыв в Supabase
+     */
+    saveReview: async function (review) {
+      if (!this.isReady() || !review) return null;
+      try {
+        var row = {
+          id: review.id || ("r" + Date.now()),
+          name: (review.name || "").trim(),
+          book: (review.book || "").trim(),
+          rating: +review.rating || 5,
+          text: (review.text || "").trim(),
+          lang: review.lang || "ru",
+          sample: !!review.sample,
+          status: review.status || "approved",
+          date: review.date || new Date().toISOString().slice(0, 10)
+        };
+        var res = await client.from("reviews").upsert(row);
+        if (res.error) {
+          console.error("saveReview error:", res.error);
+          return null;
+        }
+        return row;
+      } catch (e) {
+        console.error("saveReview exception:", e);
+        return null;
+      }
+    },
+
+    /**
+     * Обновить статус отзыва ('approved' или 'hidden')
+     */
+    updateReviewStatus: async function (reviewId, newStatus) {
+      if (!this.isReady() || !reviewId) return false;
+      try {
+        var res = await client.from("reviews").update({ status: newStatus }).eq("id", reviewId);
+        return !res.error;
+      } catch (e) {
+        return false;
+      }
+    },
+
+    /**
+     * Удалить отзыв из Supabase
+     */
+    deleteReview: async function (reviewId) {
+      if (!this.isReady() || !reviewId) return false;
+      try {
+        var res = await client.from("reviews").delete().eq("id", reviewId);
+        return !res.error;
+      } catch (e) {
+        return false;
+      }
+    },
+
+    /**
+     * Опубликовать все отзывы из массива в Supabase (синхронизация)
+     */
+    publishAllReviews: async function (reviewsList) {
+      if (!this.isReady() || !reviewsList || !reviewsList.length) return false;
+      try {
+        var rows = reviewsList.map(function (r) {
+          return {
+            id: r.id || ("r" + Date.now()),
+            name: (r.name || "").trim(),
+            book: (r.book || "").trim(),
+            rating: +r.rating || 5,
+            text: (r.text || "").trim(),
+            lang: r.lang || "ru",
+            sample: !!r.sample,
+            status: r.status || "approved",
+            date: r.date || new Date().toISOString().slice(0, 10)
+          };
+        });
+        var res = await client.from("reviews").upsert(rows);
+        return !res.error;
+      } catch (e) {
+        console.error("publishAllReviews exception:", e);
+        return false;
+      }
     }
   };
 
