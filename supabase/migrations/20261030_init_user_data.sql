@@ -278,7 +278,68 @@ create policy "Allow delete reviews"
   using (true);
 
 -- ====================================================================
--- 6. ПРАВА ДОСТУПА ДЛЯ DATA API (anon, authenticated)
+-- 6. ТАБЛИЦА ОБЛАЧНЫХ ДАННЫХ И НАСТРОЕК МАГАЗИНА (public.store_data)
+-- Хранит глобальные настройки магазина (whatsapp, доставка, объявление),
+-- а также товары и акции, публикуемые администратором.
+-- ====================================================================
+create table if not exists public.store_data (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz default now() not null
+);
+
+alter table public.store_data enable row level security;
+
+drop policy if exists "Allow read store_data" on public.store_data;
+create policy "Allow read store_data"
+  on public.store_data for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "Allow insert store_data" on public.store_data;
+create policy "Allow insert store_data"
+  on public.store_data for insert
+  to anon, authenticated
+  with check (true);
+
+drop policy if exists "Allow update store_data" on public.store_data;
+create policy "Allow update store_data"
+  on public.store_data for update
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "Allow delete store_data" on public.store_data;
+create policy "Allow delete store_data"
+  on public.store_data for delete
+  to anon, authenticated
+  using (true);
+
+-- ====================================================================
+-- 7. ХРАНИЛИЩЕ ОБЛОЖЕК КНИГ (storage.buckets 'covers')
+-- ====================================================================
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('covers', 'covers', true, 10485760, array['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+on conflict (id) do update set public = true;
+
+drop policy if exists "Allow public read covers" on storage.objects;
+create policy "Allow public read covers" on storage.objects
+  for select to anon, authenticated using (bucket_id = 'covers');
+
+drop policy if exists "Allow public upload covers" on storage.objects;
+create policy "Allow public upload covers" on storage.objects
+  for insert to anon, authenticated with check (bucket_id = 'covers');
+
+drop policy if exists "Allow public update covers" on storage.objects;
+create policy "Allow public update covers" on storage.objects
+  for update to anon, authenticated using (bucket_id = 'covers') with check (bucket_id = 'covers');
+
+drop policy if exists "Allow public delete covers" on storage.objects;
+create policy "Allow public delete covers" on storage.objects
+  for delete to anon, authenticated using (bucket_id = 'covers');
+
+-- ====================================================================
+-- 8. ПРАВА ДОСТУПА ДЛЯ DATA API (anon, authenticated)
 -- ====================================================================
 grant usage on schema public to anon, authenticated;
 grant all on all tables in schema public to anon, authenticated;

@@ -620,6 +620,131 @@
         console.error("publishAllReviews exception:", e);
         return false;
       }
+    },
+
+    /* ==================================================================== STORAGE: COVERS */
+    /**
+     * Загрузить обложку книги в Supabase Storage (bucket 'covers')
+     * Возвращает постоянную публичную HTTPS ссылку на изображение.
+     */
+    uploadCover: async function (file) {
+      if (!file) return { ok: false, message: "Файл не выбран" };
+      var cleanName = (file.name || "cover.jpg").toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+      var filename = "cover-" + Date.now() + "-" + cleanName;
+
+      // 1. Если Supabase подключен, загружаем в облачный Storage bucket 'covers'
+      if (this.isReady()) {
+        try {
+          var uploadRes = await client.storage.from("covers").upload(filename, file, {
+            cacheControl: "3600",
+            upsert: true
+          });
+          if (!uploadRes.error) {
+            var urlRes = client.storage.from("covers").getPublicUrl(filename);
+            if (urlRes && urlRes.data && urlRes.data.publicUrl) {
+              return { ok: true, url: urlRes.data.publicUrl, filename: filename };
+            }
+          } else {
+            console.warn("Supabase Storage upload warning:", uploadRes.error);
+          }
+        } catch (e) {
+          console.warn("Supabase Storage exception:", e);
+        }
+      }
+
+      // 2. Резервный вариант: Data URL (base64)
+      return new Promise(function (resolve) {
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          resolve({ ok: true, url: e.target.result, filename: filename, fallback: true });
+        };
+        reader.onerror = function () {
+          resolve({ ok: false, message: "Ошибка чтения файла" });
+        };
+        reader.readAsDataURL(file);
+      });
+    },
+
+    /* ==================================================================== STORE DATA & SETTINGS */
+    /**
+     * Получить данные магазина из Supabase (настройки, товары, акции)
+     */
+    getStoreData: async function (key) {
+      if (!this.isReady() || !key) return null;
+      try {
+        var res = await client.from("store_data").select("value").eq("key", key).maybeSingle();
+        if (res.error || !res.data) return null;
+        return res.data.value;
+      } catch (e) {
+        return null;
+      }
+    },
+
+    /**
+     * Получить все сохранённые данные магазина (settings, products, promotions)
+     */
+    getAllStoreData: async function () {
+      if (!this.isReady()) return null;
+      try {
+        var res = await client.from("store_data").select("key, value");
+        if (res.error || !res.data) return null;
+        var out = {};
+        res.data.forEach(function (row) {
+          out[row.key] = row.value;
+        });
+        return out;
+      } catch (e) {
+        return null;
+      }
+    },
+
+    /**
+     * Сохранить отдельный раздел данных в Supabase (например 'settings')
+     */
+    saveStoreData: async function (key, value) {
+      if (!this.isReady() || !key) return false;
+      try {
+        var res = await client.from("store_data").upsert({
+          key: key,
+          value: value,
+          updated_at: new Date().toISOString()
+        });
+        return !res.error;
+      } catch (e) {
+        console.error("saveStoreData error:", e);
+        return false;
+      }
+    },
+
+    /**
+     * Комплексная публикация всех данных магазина в Supabase:
+     * - Настройки магазина (S.settings)
+     * - Товары/книги (S.products)
+     * - Акции (S.promotions)
+     * - Отзывы (S.reviews)
+     */
+    publishStoreData: async function (storeObj) {
+      if (!this.isReady() || !storeObj) return false;
+      try {
+        var promises = [];
+        if (storeObj.settings) {
+          promises.push(this.saveStoreData("settings", storeObj.settings));
+        }
+        if (storeObj.products && storeObj.products.length) {
+          promises.push(this.saveStoreData("products", storeObj.products));
+        }
+        if (storeObj.promotions) {
+          promises.push(this.saveStoreData("promotions", storeObj.promotions));
+        }
+        if (storeObj.reviews && storeObj.reviews.length) {
+          promises.push(this.publishAllReviews(storeObj.reviews));
+        }
+        var results = await Promise.all(promises);
+        return results.every(function (r) { return !!r; });
+      } catch (e) {
+        console.error("publishStoreData exception:", e);
+        return false;
+      }
     }
   };
 

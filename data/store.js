@@ -40,7 +40,7 @@ window.BL_STORE = {
   "postOn": true,
   "transferOn": true,
   "onDeliveryOn": true,
-  "demoMode": true,
+  "demoMode": false,
   "lowStock": 3
  },
  "categories": [

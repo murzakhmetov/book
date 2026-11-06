@@ -75,12 +75,16 @@ function setAuthUser(user) {
     if (user) localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
     else localStorage.removeItem(AUTH_USER_KEY);
   } catch (e) {}
-  if (isStoreAdmin()) {
+  if (isStoreAdmin() || window.BL_ADMIN) {
     EDITOR = true;
-    ASSETS = "local";
+    ASSETS = "supabase";
   } else if (!window.BL_ADMIN) {
     EDITOR = false;
   }
+}
+if (isStoreAdmin() || window.BL_ADMIN) {
+  EDITOR = true;
+  ASSETS = "supabase";
 }
 
 /* ===================================================================== favorites */
@@ -155,6 +159,33 @@ function fetchSupabaseReviewsIfNeeded(force) {
       });
       S.reviews = merged;
       render();
+    }
+  });
+}
+
+var SB_STORE_FETCHED = false;
+function fetchStoreDataIfNeeded(force) {
+  if ((SB_STORE_FETCHED && !force) || !window.BL_DB || !window.BL_DB.isReady()) return;
+  SB_STORE_FETCHED = true;
+  if (!window.BL_DB.getAllStoreData) return;
+  window.BL_DB.getAllStoreData().then(function (dbStore) {
+    if (dbStore && typeof dbStore === "object") {
+      var changed = false;
+      if (dbStore.settings && typeof dbStore.settings === "object") {
+        S.settings = Object.assign({}, S.settings, dbStore.settings);
+        changed = true;
+      }
+      if (Array.isArray(dbStore.products) && dbStore.products.length) {
+        S.products = dbStore.products;
+        changed = true;
+      }
+      if (Array.isArray(dbStore.promotions) && dbStore.promotions.length) {
+        S.promotions = dbStore.promotions;
+        changed = true;
+      }
+      if (changed) {
+        render();
+      }
     }
   });
 }
@@ -270,7 +301,7 @@ function productBySlug(slug) { return S.products.filter(function (p) { return p.
 function productById(id) { return S.products.filter(function (p) { return p.id === id; })[0] || null; }
 function coverUrl(p) {
   if (!p.cover) return "";
-  if (/^https:\/\//.test(p.cover)) return p.cover;
+  if (/^https?:\/\//.test(p.cover) || /^data:image\//.test(p.cover)) return p.cover;
   if (PREVIEWS[p.cover]) return PREVIEWS[p.cover];
   if (/^images\/[\w.\/-]+$/.test(p.cover)) return p.cover;
   return "";
@@ -500,7 +531,6 @@ function header() {
       "</span></div></div>";
   }
   if (ann) h += '<div class="topbar">' + esc(ann) + "</div>";
-  if (S.settings.demoMode && !demoHidden) h += '<div class="demo-bar"><div class="wrap">' + icon("info") + "<span>" + esc(t("demo.banner")) + '</span><button type="button" data-act="hide-demo" aria-label="' + esc(t("nav.close")) + '">' + icon("close") + "</button></div></div>";
   h += '<header class="header"><div class="wrap header__row">' +
     '<button class="icon-btn mobile-only" type="button" data-act="menu" aria-label="' + esc(t("nav.menu")) + '" aria-expanded="' + UI.menu + '">' + icon("menu") + "</button>" +
     '<a class="wordmark" href="' + href("home") + '">book_lovers<span>.kz</span></a>' +
@@ -1807,7 +1837,7 @@ function adminBookForm() {
     '<div class="field"><label for="ab-binding">' + esc(A("f_binding")) + '</label><select class="select" id="ab-binding" name="binding"><option value="">' + esc(A("none")) + "</option>" + ["paperback", "hardcover", "board book"].map(function (b) { return '<option value="' + b + '"' + (p.binding === b ? " selected" : "") + ">" + esc(t("binding." + b.replace(" ", "_"))) + "</option>"; }).join("") + "</select></div></div>" +
     '<div class="two"><div class="field"><label for="ab-pages">' + esc(A("f_pages")) + '</label><input class="input" id="ab-pages" name="pages" type="number" min="1" value="' + esc(p.pages || "") + '"></div><div class="field"><label for="ab-tags">' + esc(A("f_tags")) + '</label><input class="input" id="ab-tags" name="tags" value="' + esc(p.tags || "") + '"></div></div></div></div>' +
     '<div><div class="panel"><h2>' + esc(A("f_cover")) + "</h2>" + (coverUrl(p) ? '<img class="cover-preview" src="' + esc(coverUrl(p)) + '" alt="">' : '<div class="cover-preview cover-fallback"><span>' + esc(p.title || "—") + "</span></div>") +
-    (ASSETS ? '<div class="field"><label for="ab-file">' + esc(A("f_upload")) + '</label><input class="input" id="ab-file" type="file" accept="image/jpeg,image/png,image/webp" data-admin-change="cover"><span class="hint">' + esc(ADMIN.uploading ? A("uploading") : A("f_cover_hint")) + "</span></div>" : '<p class="small muted">' + esc(A("upload_na")) + "</p>") +
+    '<div class="field"><label for="ab-file">' + esc(A("f_upload")) + '</label><input class="input" id="ab-file" type="file" accept="image/jpeg,image/png,image/webp" data-admin-change="cover"><span class="hint">' + esc(ADMIN.uploading ? "Загружаем обложку в облако…" : "Выберите изображение (JPG, PNG, WebP) — загружается сразу в облако") + "</span></div>" +
     '<div class="field"><label for="ab-cover-url">' + esc(A("f_cover_url")) + '</label><input class="input" id="ab-cover-url" name="coverUrl" value="' + esc(p.cover || "") + '" placeholder="images/covers/book.webp"></div></div>' +
     '<div class="panel"><h2>' + esc(A("showcase")) + '</h2><div class="stack-8">' + [["trending", "f_trending"], ["isNew", "f_new"], ["featured", "f_featured"], ["promo", "f_promo"]].map(function (f) { return '<label class="check"><input type="checkbox" name="' + f[0] + '" value="1"' + (p[f[0]] ? " checked" : "") + ">" + esc(A(f[1])) + "</label>"; }).join("") +
     '<label class="check"><input type="checkbox" name="active" value="1"' + (p.status === "active" ? " checked" : "") + ">" + esc(A("active")) + "</label></div>" +
@@ -2033,10 +2063,32 @@ var ADMIN_CHANGE = {
   "cover": function (el) {
     var file = el.files && el.files[0]; if (!file) return;
     readBookForm();
-    var name = file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
-    var path = "images/covers/" + name;
-    try { PREVIEWS[path] = URL.createObjectURL(file); } catch (e) { /* preview unavailable */ }
-    ADMIN.edit.draft.cover = path; ADMIN.msg = A("cover_copy", { name: name }); render();
+    ADMIN.uploading = true;
+    ADMIN.msg = "Загружаем обложку в облако…";
+    render();
+    if (window.BL_DB && window.BL_DB.uploadCover) {
+      window.BL_DB.uploadCover(file).then(function (res) {
+        ADMIN.uploading = false;
+        if (res && res.ok && res.url) {
+          if (!ADMIN.edit) ADMIN.edit = { isNew: false, draft: {} };
+          ADMIN.edit.draft.cover = res.url;
+          ADMIN.msg = "✓ Обложка успешно загружена в облако!";
+          markDirty();
+        } else {
+          ADMIN.msg = "Ошибка при загрузке обложки: " + ((res && res.message) || "");
+        }
+        render();
+      });
+    } else {
+      var name = file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+      var path = "images/covers/" + name;
+      try { PREVIEWS[path] = URL.createObjectURL(file); } catch (e) {}
+      if (!ADMIN.edit) ADMIN.edit = { isNew: false, draft: {} };
+      ADMIN.edit.draft.cover = path;
+      ADMIN.uploading = false;
+      markDirty();
+      render();
+    }
   },
   "import": function (el) {
     var file = el.files && el.files[0]; if (!file) return;
@@ -2056,7 +2108,7 @@ function readBookForm() {
   d.title = (v.title || "").trim(); d.author = (v.author || "").trim(); d.desc = readLang(v, "desc");
   d.price = v.price; d.sale = v.sale; d.stock = v.stock; if (ADMIN.edit.isNew) d.id = (v.id || "").trim();
   d.cat = v.cat; d.genre = v.genre || ""; d.ages = fd.getAll("ages"); d.level = v.level || ""; d.binding = v.binding || ""; d.pages = v.pages ? +v.pages : null; d.tags = v.tags || "";
-  var cu = (v.coverUrl || "").trim(); if (/^https:\/\//.test(cu) || /^images\/[\w.\/-]+$/.test(cu)) d.cover = cu; else if (!cu) d.cover = "";
+  var cu = (v.coverUrl || "").trim(); if (/^https?:\/\//.test(cu) || /^images\/[\w.\/-]+$/.test(cu) || /^data:image\//.test(cu)) d.cover = cu; else if (!cu) d.cover = "";
   ["trending", "isNew", "featured", "promo"].forEach(function (k) { d[k] = !!v[k]; }); d.status = v.active ? "active" : "hidden"; d.rank = +v.rank || 100;
   return d;
 }
@@ -2130,7 +2182,21 @@ var ADMIN_SUBMIT = {
     if (v.supabaseUrl !== undefined || v.supabaseAnonKey !== undefined) {
       if (window.BL_DB) window.BL_DB.saveConfig(v.supabaseUrl, v.supabaseAnonKey);
     }
-    ADMIN.errors = null; ADMIN.msg = A("saved_draft"); markDirty(); render(); window.scrollTo(0, 0);
+    ADMIN.errors = null;
+    if (window.BL_DB && window.BL_DB.saveStoreData) {
+      ADMIN.busy = true; render();
+      window.BL_DB.saveStoreData("settings", s).then(function (ok) {
+        ADMIN.busy = false;
+        if (ok) {
+          ADMIN.msg = "✓ Настройки успешно сохранены и опубликованы в базе данных Supabase!";
+        } else {
+          ADMIN.msg = "✓ Настройки сохранены локально в браузере.";
+        }
+        markDirty(); render(); window.scrollTo(0, 0);
+      });
+      return;
+    }
+    ADMIN.msg = "✓ Настройки успешно сохранены!"; markDirty(); render(); window.scrollTo(0, 0);
   }
 };
 
@@ -2207,15 +2273,46 @@ function downloadStoreFile() {
   downloadFile("store.js", text, "text/javascript");
 }
 
+function flushActiveAdminForm() {
+  var sf = app.querySelector("[data-form='a-settings']");
+  if (sf) {
+    var fd = new FormData(sf), v = {};
+    fd.forEach(function (val, k) { v[k] = val; });
+    var s = S.settings;
+    if (!v.whatsapp || normKz(v.whatsapp)) s.whatsapp = (v.whatsapp || "").trim();
+    if (v.phone !== undefined) s.phone = (v.phone || "").trim();
+    if (v.email !== undefined) s.email = (v.email || "").trim();
+    if (!v.instagram || /^https:\/\//.test(v.instagram.trim())) s.instagram = (v.instagram || "").trim();
+    if (!v.tiktok || /^https:\/\//.test(v.tiktok.trim())) s.tiktok = (v.tiktok || "").trim();
+    s.city = readLang(v, "city");
+    s.pickup = readLang(v, "pickup");
+    s.hours = readLang(v, "hours");
+    s.deliveryInfo = readLang(v, "deliveryInfo");
+    s.announcement = readLang(v, "announcement");
+    ["pickupOn", "courierOn", "postOn", "transferOn", "onDeliveryOn", "demoMode"].forEach(function (k) { s[k] = !!v[k]; });
+    if (!s.pickupOn && !s.courierOn && !s.postOn) s.pickupOn = true;
+    ["feeCourier", "feePost", "freeFrom", "lowStock"].forEach(function (k) { var n = intOrNull(v[k]); s[k] = (n == null || isNaN(n)) ? 0 : n; });
+    if (v.adminPassword && v.adminPassword.trim().length >= 4) {
+      setAdminPass(v.adminPassword.trim());
+    }
+  }
+  var bf = app.querySelector("[data-form='a-book']");
+  if (bf && ADMIN.edit && ADMIN.edit.draft) {
+    readBookForm();
+  }
+}
+
 function publishSite() {
+  flushActiveAdminForm();
   if (window.BL_DB && window.BL_DB.isReady()) {
     ADMIN.busy = true; render();
-    window.BL_DB.publishAllReviews(S.reviews).then(function (ok) {
+    var pubPromise = window.BL_DB.publishStoreData ? window.BL_DB.publishStoreData(S) : window.BL_DB.publishAllReviews(S.reviews);
+    pubPromise.then(function (ok) {
       ADMIN.busy = false;
       try { localStorage.setItem("bl-admin-draft", JSON.stringify(S)); } catch (e) { /* ignore */ }
       DIRTY = 0;
       if (ok) {
-        ADMIN.msg = "✓ Изменения успешно опубликованы! Отзывы синхронизированы с базой данных Supabase и сразу видны на сайте.";
+        ADMIN.msg = "✓ Все изменения (настройки, товары, акции и отзывы) успешно опубликованы в базе данных Supabase и сразу видны покупателям!";
       } else {
         ADMIN.msg = "Изменения сохранены локально в браузере.";
       }
@@ -2230,11 +2327,11 @@ function publishSite() {
 window.addEventListener("beforeunload", function (e) { if (DIRTY) { e.preventDefault(); e.returnValue = ""; } });
 
 /* ===================================================================== start */
-if (window.BL_ADMIN) {
-  EDITOR = true; ASSETS = "local";
+if (window.BL_ADMIN || isStoreAdmin()) {
+  EDITOR = true; ASSETS = "supabase";
   try {
     var draft = JSON.parse(localStorage.getItem("bl-admin-draft") || "null");
-    if (draft && JSON.stringify(draft.products) !== JSON.stringify(S.products) || draft && JSON.stringify(draft.settings) !== JSON.stringify(S.settings) || draft && JSON.stringify(draft.promotions) !== JSON.stringify(S.promotions) || draft && JSON.stringify(draft.reviews) !== JSON.stringify(S.reviews)) {
+    if (draft && (JSON.stringify(draft.products) !== JSON.stringify(S.products) || JSON.stringify(draft.settings) !== JSON.stringify(S.settings) || JSON.stringify(draft.promotions) !== JSON.stringify(S.promotions) || JSON.stringify(draft.reviews) !== JSON.stringify(S.reviews))) {
       S = draft; ADMIN.msg = A("draft_restored");
     }
   } catch (e) { /* ignore */ }
@@ -2243,6 +2340,7 @@ window.addEventListener("hashchange", function () { var h = location.hash.slice(
 function initSupabaseIntegration() {
   if (!window.BL_DB) return;
   fetchSupabaseReviewsIfNeeded();
+  fetchStoreDataIfNeeded();
   window.BL_DB.getSession().then(function (session) {
     if (session && session.user) {
       window.BL_DB.getProfile(session.user.id).then(function (profile) {
