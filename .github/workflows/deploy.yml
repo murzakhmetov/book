@@ -24,6 +24,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run Automated Tests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://grazmukqoglnedyzlxue.supabase.co' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'sb_publishable_qSIoQs6qkLhT3z6tDXCPIw_PUPrZOlN' }}
+        run: npm test
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact

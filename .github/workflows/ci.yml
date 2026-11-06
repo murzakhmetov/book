@@ -1,0 +1,30 @@
+name: CI Test Suite
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Automated Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Test Suite
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://grazmukqoglnedyzlxue.supabase.co' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'sb_publishable_qSIoQs6qkLhT3z6tDXCPIw_PUPrZOlN' }}
+        run: npm test

@@ -1,0 +1,22 @@
+{
+  "name": "book-lovers-kz",
+  "version": "1.0.0",
+  "description": "book_lovers.kz online bookstore",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run-all.js",
+    "test:syntax": "node tests/syntax.test.js",
+    "test:catalog": "node tests/catalog.test.js",
+    "test:logic": "node tests/logic.test.js",
+    "test:supabase": "node tests/supabase.test.js",
+    "test:dom": "node tests/dom.test.js",
+    "check": "node tests/run-all.js"
+  },
+  "keywords": [
+    "bookstore",
+    "supabase",
+    "ecommerce"
+  ],
+  "author": "Alikhan",
+  "license": "ISC"
+}
